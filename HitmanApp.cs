@@ -244,7 +244,7 @@ public class HitmanApp : PhoneApp
             }
 
             // Request button
-            var btnPanel = MakePanel("ReqBtn", root.transform, AccentRed);
+            var btnPanel = MakeButtonPanel("ReqBtn", root.transform, AccentRed);
             AnchorRect(btnPanel, 0.15f, 0.30f, 0.85f, 0.40f);
             PlaceText("ReqTxt", "REQUEST CONTRACT", btnPanel, 18, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
 
@@ -261,7 +261,7 @@ public class HitmanApp : PhoneApp
         PlaceText("Tip", "Contracts are also sent automatically via SMS", root, 12, FontStyle.Italic, TextAnchor.MiddleCenter, 0, 0.22f, 1, 0.28f);
 
         // Reset Progress button
-        var resetPanel = MakePanel("ResetBtn", root.transform, new Color(0.3f, 0.15f, 0.15f));
+        var resetPanel = MakeButtonPanel("ResetBtn", root.transform, new Color(0.3f, 0.15f, 0.15f));
         AnchorRect(resetPanel, 0.05f, 0.04f, 0.48f, 0.12f);
         PlaceText("ResetTxt", "RESET PROGRESS", resetPanel, 11, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
         resetPanel.AddComponent<Button>().onClick.AddListener((UnityAction)(() =>
@@ -277,7 +277,7 @@ public class HitmanApp : PhoneApp
         }));
 
         // Reset Config button
-        var configPanel = MakePanel("ConfigBtn", root.transform, new Color(0.15f, 0.15f, 0.3f));
+        var configPanel = MakeButtonPanel("ConfigBtn", root.transform, new Color(0.15f, 0.15f, 0.3f));
         AnchorRect(configPanel, 0.52f, 0.04f, 0.95f, 0.12f);
         PlaceText("ConfigTxt", "RESET CONFIG", configPanel, 11, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
         configPanel.AddComponent<Button>().onClick.AddListener((UnityAction)(() =>
@@ -352,7 +352,7 @@ public class HitmanApp : PhoneApp
         }
 
         // Accept button
-        var acceptPanel = MakePanel("AcceptBtn", root.transform, AcceptGreen);
+        var acceptPanel = MakeButtonPanel("AcceptBtn", root.transform, AcceptGreen);
         AnchorRect(acceptPanel, 0.08f, 0.24f, 0.48f, 0.35f);
         PlaceText("AcceptTxt", "ACCEPT", acceptPanel, 18, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
         var acceptBtn = acceptPanel.AddComponent<Button>();
@@ -360,7 +360,7 @@ public class HitmanApp : PhoneApp
         acceptBtn.onClick.AddListener((UnityAction)(() => { mgr.AcceptPendingOffer(); }));
 
         // Decline button
-        var declinePanel = MakePanel("DeclineBtn", root.transform, AbortRed);
+        var declinePanel = MakeButtonPanel("DeclineBtn", root.transform, AbortRed);
         AnchorRect(declinePanel, 0.52f, 0.24f, 0.92f, 0.35f);
         PlaceText("DeclineTxt", "DECLINE", declinePanel, 18, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
         var declineBtn = declinePanel.AddComponent<Button>();
@@ -459,7 +459,7 @@ public class HitmanApp : PhoneApp
         if (!mgr.TrackingEnabled)
         {
             float hackCost = HitmanConfig.GetHackCost(contract.Difficulty);
-            var hackPanel = MakePanel("HackBtn", root.transform, new Color(0.15f, 0.25f, 0.45f));
+            var hackPanel = MakeButtonPanel("HackBtn", root.transform, new Color(0.15f, 0.25f, 0.45f));
             AnchorRect(hackPanel, 0.1f, 0.30f, 0.9f, 0.40f);
             PlaceText("HackTxt", $"TRACE SIGNAL (${hackCost:N0})", hackPanel, 14, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
             var hackBtn = hackPanel.AddComponent<Button>();
@@ -473,7 +473,7 @@ public class HitmanApp : PhoneApp
         }
 
         // Abort button
-        var abortPanel = MakePanel("AbortBtn", root.transform, AbortRed);
+        var abortPanel = MakeButtonPanel("AbortBtn", root.transform, AbortRed);
         AnchorRect(abortPanel, 0.1f, 0.20f, 0.9f, 0.28f);
         PlaceText("AbortTxt", "ABORT CONTRACT", abortPanel, 16, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
 
@@ -507,7 +507,7 @@ public class HitmanApp : PhoneApp
         PlaceText("Msg", message, dialog, 14, FontStyle.Normal, TextAnchor.MiddleCenter, 0.08f, 0.35f, 0.92f, 0.70f);
 
         // YES button
-        var yesPanel = MakePanel("Yes", dialog.transform, AcceptGreen);
+        var yesPanel = MakeButtonPanel("Yes", dialog.transform, AcceptGreen);
         AnchorRect(yesPanel, 0.08f, 0.08f, 0.46f, 0.28f);
         PlaceText("YesTxt", "YES", yesPanel, 16, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
         yesPanel.AddComponent<Button>().onClick.AddListener((UnityAction)(() =>
@@ -517,7 +517,7 @@ public class HitmanApp : PhoneApp
         }));
 
         // NO button
-        var noPanel = MakePanel("No", dialog.transform, AbortRed);
+        var noPanel = MakeButtonPanel("No", dialog.transform, AbortRed);
         AnchorRect(noPanel, 0.54f, 0.08f, 0.92f, 0.28f);
         PlaceText("NoTxt", "NO", noPanel, 16, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
         noPanel.AddComponent<Button>().onClick.AddListener((UnityAction)(() =>
@@ -540,6 +540,47 @@ public class HitmanApp : PhoneApp
             ContractDifficulty.VeryHard => "E64050",
             _ => "CCCCCC"
         };
+    }
+
+    private static Sprite? _buttonSprite;
+
+    private static Sprite GetButtonSprite()
+    {
+        if (_buttonSprite != null) return _buttonSprite;
+        const int size = 24;
+        const float radius = 4f;
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        var clear = new Color32(0, 0, 0, 0);
+        var white = new Color32(255, 255, 255, 255);
+        for (int x = 0; x < size; x++)
+        {
+            for (int y = 0; y < size; y++)
+            {
+                bool inCorner =
+                    (x < radius && y < radius && Vector2.Distance(new Vector2(x, y), new Vector2(radius, radius)) > radius) ||
+                    (x > size - radius - 1 && y < radius && Vector2.Distance(new Vector2(x, y), new Vector2(size - radius - 1, radius)) > radius) ||
+                    (x < radius && y > size - radius - 1 && Vector2.Distance(new Vector2(x, y), new Vector2(radius, size - radius - 1)) > radius) ||
+                    (x > size - radius - 1 && y > size - radius - 1 && Vector2.Distance(new Vector2(x, y), new Vector2(size - radius - 1, size - radius - 1)) > radius);
+                tex.SetPixel(x, y, inCorner ? clear : white);
+            }
+        }
+        tex.Apply();
+        _buttonSprite = Sprite.Create(tex, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), 100f, 0u,
+            SpriteMeshType.FullRect, new Vector4(6f, 6f, 6f, 6f));
+        return _buttonSprite;
+    }
+
+    private GameObject MakeButtonPanel(string name, Transform parent, Color color)
+    {
+        var go = UIFactory.Panel(name, parent, Color.white);
+        var img = go.GetComponent<Image>();
+        if (img != null)
+        {
+            img.sprite = GetButtonSprite();
+            img.type = Image.Type.Sliced;
+            img.color = color;
+        }
+        return go;
     }
 
     private static void ConfigureButtonFeedback(Button btn, Color normalColor)

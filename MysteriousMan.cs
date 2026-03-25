@@ -3,6 +3,7 @@ using S1API.Entities;
 using S1API.Entities.Dialogue;
 using S1API.Entities.Schedule;
 using S1API.Map;
+using S1API.Money;
 using MelonLoader;
 using UnityEngine;
 
@@ -103,8 +104,9 @@ public sealed class MysteriousMan : NPC
                     "Of course, it's a paid position. Are you interested?",
                     choices =>
                     {
-                        choices.Add("accept", "Yes, I am. (Register as a Hitman)", null);
-                        choices.Add("decline", "No, sorry, I'm the wrong person for this.", null);
+                        choices.Add("accept",       "Yes, I am. (Register as a Hitman)", null);
+                        choices.Add("decline",      "No, sorry, I'm the wrong person for this.", null);
+                        choices.Add("buy_cable",    $"Buy Fibre Glass Cable (${(int)FibreGlassCable.Price})", null);
                     });
             });
 
@@ -138,6 +140,36 @@ public sealed class MysteriousMan : NPC
                     gameNpc?.SendTextMessage("Your loss. I'll be around if you change your mind.");
                 }
                 catch { }
+            });
+
+            Dialogue.OnChoiceSelected("buy_cable", () =>
+            {
+                try
+                {
+                    float balance = Money.GetCashBalance();
+                    if (balance < FibreGlassCable.Price)
+                    {
+                        MelonLogger.Msg("[THM] Player can't afford Fibre Glass Cable.");
+                        var gameNpc = gameObject.GetComponent<Il2CppScheduleOne.NPCs.NPC>();
+                        gameNpc?.SendTextMessage($"You're short on cash. That cable costs ${(int)FibreGlassCable.Price}. Come back when you have the money.");
+                        return;
+                    }
+
+                    Money.ChangeCashBalance(-FibreGlassCable.Price, true, false);
+                    FibreGlassCable.GiveToPlayer();
+
+                    MelonLogger.Msg("[THM] Player purchased Fibre Glass Cable.");
+                    try
+                    {
+                        var gameNpc = gameObject.GetComponent<Il2CppScheduleOne.NPCs.NPC>();
+                        gameNpc?.SendTextMessage("There you go. Use it wisely — and quietly.");
+                    }
+                    catch { }
+                }
+                catch (Exception ex)
+                {
+                    MelonLogger.Error($"[THM] buy_cable handler failed: {ex.Message}");
+                }
             });
 
             // Freeze in place after spawn

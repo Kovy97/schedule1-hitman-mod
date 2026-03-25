@@ -66,6 +66,9 @@ public class ContractManager
     // Pending offer time remaining (exposed for UI)
     public float PendingOfferTimeRemaining => PendingOffer != null ? Math.Max(0f, PendingOfferTimeout - _pendingOfferTimer) : 0f;
 
+    // Exposed for dialogue patches / distract follow
+    public NPC? TargetNpc => _targetNpc;
+
     // Internal
     private NPC? _targetNpc;
     private NPC? _clientNpc;
@@ -88,6 +91,13 @@ public class ContractManager
     public bool IsAwaitingCollection => _paymentDrop != null;
     public string? PaymentDropName => _paymentDrop?.DeadDropName;
     public float PaymentReward => _paymentReward;
+
+    // ── Kill Bonus Tracking ──
+    private bool _killUsedCable;
+    private bool _killHadWitnesses;
+
+    public void SetKillUsedCable() => _killUsedCable = true;
+    public void SetKillHadWitnesses() => _killHadWitnesses = true;
 
     public event Action? OnStateChanged;
 
@@ -216,6 +226,9 @@ public class ContractManager
             try { NPCDefenseHandler.PrepareTarget(_targetNpc, ActiveContract.Difficulty); }
             catch (Exception ex) { Melon<HitmanModMain>.Logger.Warning($"Failed to re-arm target: {ex.Message}"); }
 
+            try { DistractChoiceInjector.InjectChoice(_targetNpc); }
+            catch (Exception ex) { Melon<HitmanModMain>.Logger.Warning($"Failed to inject distract choice (resolve): {ex.Message}"); }
+
             Melon<HitmanModMain>.Logger.Msg($"Resolved active contract target: {ActiveContract.TargetName}");
         }
         else
@@ -318,6 +331,9 @@ public class ContractManager
                 UpdateTracking();
             }
         }
+
+        // Distract follow update
+        DistractFollow.Update(deltaTime);
 
         // Pending offer timeout
         if (PendingOffer != null)
@@ -642,8 +658,17 @@ public class ContractManager
         {
             var player = GamePlayer.Local;
             if (player == null || _targetNpc == null) { TargetDistance = -1f; return; }
+
+            // NPCs inside buildings have their transform at world-origin (interior scenes at 0,0,0)
+            // — use IsInBuilding to detect and skip distance calculation in that case
+            if (_targetNpc.IsInBuilding) { TargetDistance = -2f; return; } // -2 = "inside building"
+
             var playerPos = player.transform.position;
             var targetPos = _targetNpc.gameObject.transform.position;
+
+            // Sanity check: discard if position is at/near world origin (unloaded NPC)
+            if (targetPos.sqrMagnitude < 1f) { TargetDistance = -1f; return; }
+
             TargetDistance = Vector3.Distance(playerPos, targetPos);
         }
         catch
@@ -657,7 +682,9 @@ public class ContractManager
     /// </summary>
     public string GetFormattedDistance()
     {
-        if (ActiveContract == null || TargetDistance < 0f) return "";
+        if (ActiveContract == null) return "";
+        if (TargetDistance == -2f) return "Inside building";
+        if (TargetDistance < 0f) return "";
 
         return ActiveContract.Difficulty switch
         {
@@ -699,29 +726,17 @@ public class ContractManager
     {
         try
         {
-            var map = GameMap.Instance;
-            if (map != null)
-            {
-                var pos = npc.gameObject.transform.position;
-                var currentRegion = map.GetRegionFromPosition(pos);
-                int regionInt = (int)currentRegion;
-                if (_regionIntCache.TryGetValue(regionInt, out string? cached))
-                    return cached;
+            // Prefer npc.Region — it's the game's own region assignment, reliable for
+            // both outdoor and indoor NPCs. Position-based lookup fails for NPCs inside
+            // buildings (interior scenes placed at world-origin return wrong region).
+            int regionInt = (int)npc.Region;
+            if (_regionIntCache.TryGetValue(regionInt, out string? cached))
+                return cached;
 
-                string raw = currentRegion.ToString();
-                string friendly = RegionNameMap.TryGetValue(raw, out string? mapped) ? mapped : raw;
-                _regionIntCache[regionInt] = friendly;
-                return friendly;
-            }
-
-            int fallback = (int)npc.Region;
-            if (_regionIntCache.TryGetValue(fallback, out string? fb))
-                return fb;
-
-            string fallbackRaw = npc.Region.ToString();
-            string fallbackFriendly = RegionNameMap.TryGetValue(fallbackRaw, out string? fbm) ? fbm : fallbackRaw;
-            _regionIntCache[fallback] = fallbackFriendly;
-            return fallbackFriendly;
+            string raw = npc.Region.ToString();
+            string friendly = RegionNameMap.TryGetValue(raw, out string? mapped) ? mapped : raw;
+            _regionIntCache[regionInt] = friendly;
+            return friendly;
         }
         catch
         {
@@ -850,6 +865,9 @@ public class ContractManager
             Melon<HitmanModMain>.Logger.Warning($"Failed to arm target: {ex.Message}");
         }
 
+        try { DistractChoiceInjector.InjectChoice(_targetNpc!); }
+        catch (Exception ex) { Melon<HitmanModMain>.Logger.Warning($"Failed to inject distract choice: {ex.Message}"); }
+
         string warning = ActiveContract.Difficulty >= ContractDifficulty.Hard
             ? " <b>Be careful - the target may be armed.</b>"
             : "";
@@ -910,7 +928,33 @@ public class ContractManager
         if (ActiveContract == null || ActiveContract.Status != ContractStatus.Active) return;
 
         ActiveContract.Status = ContractStatus.Completed;
-        float reward = ActiveContract.Reward;
+        float baseReward = ActiveContract.Reward;
+
+        // ── Calculate bonuses (percentage of base reward) ──
+        float bonusTotal = 0f;
+        string bonusText = "";
+
+        if (!_killHadWitnesses)
+        {
+            float silenceBonus = baseReward * 0.25f; // +25% for no witnesses
+            bonusTotal += silenceBonus;
+            bonusText += $"\n<b>+${silenceBonus:N0}</b> Silence Bonus (no witnesses)";
+            Melon<HitmanModMain>.Logger.Msg($"[THM] Bonus: Silence +${silenceBonus:N0} (25%)");
+        }
+
+        if (_killUsedCable)
+        {
+            float cableBonus = baseReward * 0.20f; // +20% for using fibre cable
+            bonusTotal += cableBonus;
+            bonusText += $"\n<b>+${cableBonus:N0}</b> Silent Kill Bonus (Fibre Cable)";
+            Melon<HitmanModMain>.Logger.Msg($"[THM] Bonus: Silent Kill +${cableBonus:N0} (20%)");
+        }
+
+        float reward = baseReward + bonusTotal;
+
+        // Reset bonus flags
+        _killUsedCable = false;
+        _killHadWitnesses = false;
 
         CompletedCount++;
         AddExperience(ActiveContract.Difficulty);
@@ -951,8 +995,12 @@ public class ContractManager
                         var compass = CompassManager.Instance;
                         if (compass != null && drop.transform != null)
                         {
-                            _compassElement = compass.AddElement(drop.transform, null, true);
-                            Melon<HitmanModMain>.Logger.Msg($"[THM] Compass element added for dead drop.");
+                            var prefab = compass.ElementPrefab?.GetComponent<UnityEngine.RectTransform>();
+                            if (prefab != null)
+                            {
+                                _compassElement = compass.AddElement(drop.transform, prefab, true);
+                                Melon<HitmanModMain>.Logger.Msg($"[THM] Compass element added for dead drop.");
+                            }
                         }
                     }
                     catch (Exception ex)
@@ -962,8 +1010,9 @@ public class ContractManager
 
                     SendClientMessage(
                         $"Good work. <b>${reward:N0}</b> is waiting for you at <b>{dropName}</b>.\n" +
-                        $"<b>+{xp} REP</b>\n\n" +
-                        $"Go collect your payment."
+                        $"<b>+{xp} REP</b>" +
+                        (bonusText.Length > 0 ? $"\n{bonusText}" : "") +
+                        $"\n\nGo collect your payment."
                     );
 
                     Melon<HitmanModMain>.Logger.Msg($"[THM] Contract completed! ${reward} placed at dead drop '{dropName}'");
@@ -991,8 +1040,9 @@ public class ContractManager
 
             SendClientMessage(
                 $"Well done. <b>${reward:N0}</b> has been wired to your account.\n" +
-                $"<b>+{xp} REP</b>\n\n" +
-                $"I'll be in touch when I have more work for you."
+                $"<b>+{xp} REP</b>" +
+                (bonusText.Length > 0 ? $"\n{bonusText}" : "") +
+                $"\n\nI'll be in touch when I have more work for you."
             );
             Melon<HitmanModMain>.Logger.Msg($"[THM] Contract completed! ${reward} paid directly (no dead drop available).");
         }
@@ -1065,6 +1115,8 @@ public class ContractManager
 
     private void ResetContractState()
     {
+        DistractFollow.StopFollowing();
+        DistractChoiceInjector.RemoveChoice();
         ActiveContract = null;
         _targetNpc = null;
         _clientNpc = null;
@@ -1079,6 +1131,8 @@ public class ContractManager
         LastKnownLocation = "";
         TargetDistance = -1f;
         _savedTargetRelationship = null;
+        _killUsedCable = false;
+        _killHadWitnesses = false;
     }
 
     private void CleanupPaymentDrop()

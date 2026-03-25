@@ -15,6 +15,8 @@ public class HitmanModMain : MelonMod
 
     private bool _initialized;
     private bool _npcsReady;
+    private bool _cableRegistered;
+    private float _cableRetryTimer;
     private float _appRefreshTimer = 2f;
     private float _initCheckTimer = 5f;
     private int _npcStableChecks;
@@ -29,11 +31,33 @@ public class HitmanModMain : MelonMod
         Instance = this;
         HitmanConfig.Initialize();
         ContractManager = new ContractManager();
+        HarmonyInstance.PatchAll(typeof(HitmanModMain).Assembly);
         LoggerInstance.Msg("T.H.M - The Hitman Mod v4.0.0 loaded. Waiting for NPCs...");
+    }
+
+    public override void OnSceneWasLoaded(int buildIndex, string sceneName)
+    {
+        // Register custom items ASAP so the game can deserialize them from saved inventory.
+        // Must happen BEFORE the game loads player inventory data.
+        if (!_cableRegistered)
+            TryRegisterCable();
     }
 
     public override void OnUpdate()
     {
+        // ── Phase 0: Register custom items ASAP (retry until Registry is ready) ──
+        if (!_cableRegistered)
+        {
+            _cableRetryTimer += UnityEngine.Time.deltaTime;
+            if (_cableRetryTimer >= 3f)
+            {
+                _cableRetryTimer = 0f;
+                TryRegisterCable();
+            }
+            if (!_cableRegistered) return;
+        }
+
+        // ── Phase 1: Wait for NPCs to be ready ──
         if (!_initialized)
         {
             _initCheckTimer -= UnityEngine.Time.deltaTime;
@@ -158,6 +182,7 @@ public class HitmanModMain : MelonMod
         }
 
         ContractManager.Update(UnityEngine.Time.deltaTime);
+        StrangleHandler.Update(UnityEngine.Time.deltaTime);
 
         // Lightweight timer updates (no UI rebuild)
         if (_appRefreshTimer > 0f)
@@ -169,6 +194,28 @@ public class HitmanModMain : MelonMod
         }
     }
 
+    private void TryRegisterCable()
+    {
+        try
+        {
+            // Check if Registry is ready by looking up a known vanilla item
+            var test = Il2CppScheduleOne.Registry.GetItem("cuke");
+            if (test == null)
+            {
+                LoggerInstance.Msg("[THM] Registry not ready yet, retrying cable registration...");
+                return;
+            }
+
+            FibreGlassCable.Register();
+            _cableRegistered = true;
+            LoggerInstance.Msg("[THM] Fibre Glass Cable registered early — inventory can now deserialize it.");
+        }
+        catch (Exception ex)
+        {
+            LoggerInstance.Warning($"[THM] TryRegisterCable failed: {ex.Message}");
+        }
+    }
+
     public override void OnApplicationQuit()
     {
         ContractManager?.UnhookGameSaveEvents();
@@ -176,6 +223,7 @@ public class HitmanModMain : MelonMod
 
     public override void OnSceneWasUnloaded(int buildIndex, string sceneName)
     {
+        StrangleHandler.Reset();
         if (_initialized)
         {
             ContractManager?.UnhookGameSaveEvents();
@@ -184,6 +232,8 @@ public class HitmanModMain : MelonMod
         _initialized = false;
         _npcsReady = false;
         _npcStableChecks = 0;
+        _cableRegistered = false;
+        _cableRetryTimer = 0f;
         _initCheckTimer = 5f;
         _npcRecheckTimer = 0f;
         _appRefreshTimer = 2f;
