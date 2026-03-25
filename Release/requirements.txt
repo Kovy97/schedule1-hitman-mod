@@ -1,0 +1,8 @@
+Requirements for T.H.M - The Hitman Mod
+========================================
+
+1. MelonLoader (latest version)
+   https://melonwiki.xyz/
+
+2. S1API (Il2Cpp MelonLoader) v2.8.8+
+   https://www.nexusmods.com/schedule1/mods/291

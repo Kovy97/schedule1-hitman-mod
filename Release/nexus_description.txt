@@ -1,0 +1,124 @@
+[center][size=6][b][color=#E64050]T.H.M — THE HITMAN MOD[/color][/b][/size]
+[size=3][i]Register as a contract killer. Hunt targets. Get paid.[/i][/size][/center]
+
+[line]
+
+[center][size=4]Open the Hitman app on your in-game phone, accept contracts via SMS, track down targets across Hyland Point, and collect your reward.[/size][/center]
+
+[line]
+
+[heading]How It Works[/heading]
+
+[list=1]
+[*]Open the [b]Hitman[/b] app on your phone and pay the [b]$5,000[/b] registration fee
+[*]Press [b]REQUEST CONTRACT[/b] or wait for an automatic SMS offer
+[*]Read the offer — target name, contract type, difficulty, and reward
+[*]Tap [b]Accept[/b] or [b]Decline[/b] via SMS reply
+[*]Use the [b]Phone Signal Tracker[/b] to hunt down your target
+[*]Complete the job and collect your payout via bank transfer
+[/list]
+
+[line]
+
+[heading]Two Contract Types[/heading]
+
+[list]
+[*][color=#E64050][b]Eliminate[/b][/color] — Kill the target. Clean and simple.
+[*][color=#E6A040][b]Knock Out[/b][/color] — Incapacitate the target without killing them. Kill a knockout target and the contract fails.
+[/list]
+
+[heading]5 Difficulty Levels[/heading]
+
+Targets don't know you're coming. They go about their day until you make your move. Once you attack, they fight back — and how they fight depends on the difficulty:
+
+[list]
+[*][color=#00C878][b]Very Easy[/b][/color] ($500–$1,500) — Unarmed, barely fights back
+[*][color=#00C878][b]Easy[/b][/color] ($1,500–$3,000) — Grabs a broken bottle
+[*][color=#E6C040][b]Medium[/b][/color] ($3,000–$5,500) — Pulls a knife, 1.5x health
+[*][color=#E68040][b]Hard[/b][/color] ($5,500–$9,000) — Draws a pistol, 2x health
+[*][color=#E64050][b]Very Hard[/b][/color] ($9,000–$15,000) — Pulls a shotgun, 3x health
+[/list]
+
+Targets only arm themselves [b]after you attack[/b]. Before that, they look and act completely normal.
+
+[line]
+
+[heading]Phone Signal Tracker[/heading]
+
+After accepting a contract, the Hitman app shows a live [b]Phone Signal Tracker[/b] for your target:
+
+[list]
+[*][b]Live distance[/b] — Shows how far the target is from you in real time (color-coded: [color=#00C878]green[/color] = close, [color=#E6C040]yellow[/color] = medium, [color=#E6A040]orange[/color] = far)
+[*][b]Region intel[/b] — Displays the target's current region (Docks, Downtown, Northtown, Suburbia, Uptown, Westville)
+[*][b]SMS updates[/b] — Your client also sends you text messages when the target moves to a different region
+[/list]
+
+Intel accuracy depends on difficulty:
+
+[list]
+[*][color=#00C878][b]Very Easy / Easy[/b][/color] — Full tracking: live distance + exact region intel
+[*][color=#E6C040][b]Medium[/b][/color] — Live distance + mostly accurate region, occasionally vague
+[*][color=#E68040][b]Hard[/b][/color] — Live distance + always vague region descriptions
+[*][color=#E64050][b]Very Hard[/b][/color] — One initial update only. After that, you're on your own.
+[/list]
+
+[line]
+
+[heading]Reputation System (Level 1–10)[/heading]
+
+Every completed contract earns reputation. As your rep grows, harder contracts unlock:
+
+[list]
+[*][b]Level 1–2[/b] — Very Easy and Easy contracts only
+[*][b]Level 3–4[/b] — Medium contracts unlocked
+[*][b]Level 5–7[/b] — Hard contracts unlocked
+[*][b]Level 8–10[/b] — Very Hard contracts unlocked
+[/list]
+
+Your reputation level, progress bar, completed contracts, and total earnings are all displayed in the phone app.
+
+[heading]Smart Target Selection[/heading]
+
+The mod automatically excludes NPCs that shouldn't be targets:
+
+[list]
+[*][b]Dealers[/b] — All dealer NPCs (yours and others') are excluded
+[*][b]Employees[/b] — Your botanists, chemists, cleaners, and packagers
+[*][b]Suppliers[/b] — All supplier NPCs
+[*][b]Goons[/b] — Cartel goons and bodyguards
+[*][b]Officers[/b] — Police, guards, and enforcers
+[*][b]Story NPCs[/b] — Quest-essential and vendor characters
+[/list]
+
+Only regular citizens can become targets — no one essential to your business or the game's systems.
+
+[heading]Cooldown[/heading]
+
+After completing or failing a contract, there's a [b]cooldown[/b] before you can take on the next one. The remaining time is displayed in the app.
+
+[line]
+
+[heading]Installation[/heading]
+
+[list=1]
+[*]Install [url=https://melonwiki.xyz/]MelonLoader[/url] for Schedule I
+[*]Install [url=https://www.nexusmods.com/schedule1/mods/291]S1API[/url] (required dependency, v2.8.8+)
+[*]Drop [b]Kowyx_THM.dll[/b] into your [b]Schedule I/Mods/[/b] folder
+[*]Launch the game and open the [b]Hitman[/b] app on your phone
+[/list]
+
+[line]
+
+[heading]Good to Know[/heading]
+
+[list]
+[*]Registration costs [b]$5,000[/b] (one-time, paid via bank transfer)
+[*]All contract rewards are paid to your bank account
+[*]Contracts are offered automatically every few minutes, or request one manually
+[*]All regular citizen NPCs (including modded custom NPCs) can appear as targets or clients
+[*]Progress (registration, level, completed contracts, earnings) is saved automatically
+[/list]
+
+[line]
+
+[center][size=3][color=#E64050]Made by Kowyx[/color][/size][/center]

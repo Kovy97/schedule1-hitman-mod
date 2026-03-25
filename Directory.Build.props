@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <!-- WICHTIG: Passe diesen Pfad zu deiner Schedule I Installation an! -->
+    <GameDir>D:\SteamLibrary\steamapps\common\Schedule I</GameDir>
+  </PropertyGroup>
+</Project>

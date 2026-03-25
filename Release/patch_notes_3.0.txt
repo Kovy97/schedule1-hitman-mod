@@ -1,0 +1,21 @@
+T.H.M — The Hitman Mod v3.0.0 — Patch Notes
+=============================================
+
+SMART TARGET SELECTION (NEW)
+- Dealers, employees, suppliers, goons, and officers are now properly excluded as targets
+- Uses deep Il2Cpp type detection instead of unreliable proxy type names — no more contracts on Molly, Benzies' dealers, Benzies' goons, or any other NPC that shouldn't be a target
+- Fallback name-pattern matching as additional safety net (catches any NPC with "Dealer", "Goon", "Officer", or "Supplier" in their name)
+- Only regular citizens can become targets — nobody essential to your business or the game
+
+STABILITY & BUGFIXES
+- Dozens of reliability fixes from extensive code review:
+  - NPC validity checks now properly detect dead/destroyed Il2Cpp objects
+  - Kill contracts no longer fail when the target is garbage-collected — they now correctly complete
+  - Tracking intel no longer permanently lost if client NPC is temporarily invalid
+  - Fixed double-execution races between complete/fail/abort contract flows
+  - Active contracts now survive scene transitions properly
+  - Fixed payment tracking only counting successful transfers
+  - Corrupted save files now handled gracefully with enum validation and XP reconciliation
+  - Distance display shows "<5m" / "<25m" instead of "~0m" at close range
+
+If you were getting contracts on dealers, goons, or officers before — that's fixed now. Enjoy the hunt!

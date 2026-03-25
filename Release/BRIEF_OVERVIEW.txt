@@ -1,0 +1,1 @@
+Register as a contract killer via a custom phone app. Accept or decline hit jobs via SMS, track targets with a live Phone Signal Tracker showing distance and region, and get paid. 5 difficulty levels, reputation system (Level 1-10), defensive target AI, and smart NPC filtering that excludes dealers, employees, goons, officers, and story NPCs. Requires S1API.

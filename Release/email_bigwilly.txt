@@ -1,0 +1,18 @@
+Subject: Two Schedule I mods I'd love your opinion on
+
+Hey BigWilly,
+
+Hope you're doing well! My name's MSchu, I'm a software developer from Germany. I stumbled across Schedule I a little while ago and got completely hooked — both on the game itself and on your content around it. You've honestly become one of my favorite YouTubers to watch, so this is a bit surreal to be writing.
+
+Anyway, I ended up going down the modding rabbit hole and built two mods that I just published (or am about to publish) on Nexus:
+
+- T.H.E — The High Exchange: A full stock market app for the in-game phone. 10 stocks across 5 sectors, dynamic price simulation, news system, leverage trading, dividends, pump & dump events, IPOs, rival AI traders, the whole thing. It got a bit out of hand honestly.
+
+- T.H.M — The Hitman Mod: Adds a hitman career to the game. You register through a phone app, get contract offers via SMS from NPCs, and hunt down targets across Hyland Point. There's a reputation system, 5 difficulty levels where targets actually fight back with weapons when you attack them, and an intel system that texts you their region.
+
+I'm not expecting anything at all, but I figured I'd reach out and ask — would you be interested in checking them out, or maybe even featuring one of them? Your opinion genuinely means a lot to me, and even just a quick "yeah these are cool" or "nah not my thing" would make my day.
+
+Either way, keep doing what you're doing. Your videos are the reason I got into modding this game in the first place.
+
+Cheers,
+MSchu

@@ -1,0 +1,12 @@
+# Build artifacts
+obj/
+bin/
+.vs/
+*.user
+*.suo
+
+# Compiled output in Release/ (distribute via GitHub Releases instead)
+Release/*.dll
+Release/*.pdb
+Release/*.zip
+
