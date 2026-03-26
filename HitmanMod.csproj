@@ -12,6 +12,11 @@
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
   </PropertyGroup>
 
+  <!-- Embed the garrote AssetBundle into the DLL -->
+  <ItemGroup>
+    <EmbeddedResource Include="Backup\garrote" LogicalName="HitmanMod.Resources.garrote" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- MelonLoader -->
     <Reference Include="MelonLoader">
@@ -66,6 +71,18 @@
     </Reference>
     <Reference Include="UnityEngine.PhysicsModule">
       <HintPath>$(GameDir)\MelonLoader\Il2CppAssemblies\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- AssetBundle loading (Il2Cpp wrapper from MelonLoader) -->
+    <Reference Include="UnityEngine.Il2CppAssetBundleManager">
+      <HintPath>$(GameDir)\MelonLoader\net6\UnityEngine.Il2CppAssetBundleManager.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- Animation (for Animator.GetBoneTransform) -->
+    <Reference Include="UnityEngine.AnimationModule">
+      <HintPath>$(GameDir)\MelonLoader\Il2CppAssemblies\UnityEngine.AnimationModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
 

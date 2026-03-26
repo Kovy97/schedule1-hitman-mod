@@ -11,40 +11,29 @@ namespace HitmanMod;
 /// </summary>
 public static class TargetDescription
 {
-    public static string Generate(S1API.Entities.NPC npc)
+    public static string GenerateFromGameNpc(Il2CppScheduleOne.NPCs.NPC? gameNpc)
     {
         try
         {
-            var gameNpc = npc.gameObject.GetComponent<Il2CppScheduleOne.NPCs.NPC>();
             if (gameNpc?.Avatar == null) return "No description available.";
-
             var avatar = gameNpc.Avatar;
             var settings = avatar.CurrentSettings;
             if (settings == null) return "No description available.";
 
             var sb = new StringBuilder();
 
-            // Gender
             bool isMale = avatar.IsMale();
             sb.Append(isMale ? "Male" : "Female");
 
-            // Hair
             string hairPath = settings.HairPath ?? "";
             string hairStyle = ExtractHairStyle(hairPath);
             string hairColor = ColorToName(settings.HairColor);
 
-            if (hairStyle == "bald" || avatar.wearingHairBlockingAccessory)
-            {
-                // Check for hat — don't mention hair if wearing headwear
-            }
-            else if (!string.IsNullOrEmpty(hairStyle))
-            {
+            if (hairStyle != "bald" && !avatar.wearingHairBlockingAccessory && !string.IsNullOrEmpty(hairStyle))
                 sb.Append($" with {hairColor} {hairStyle}");
-            }
 
             sb.Append(". ");
 
-            // Clothing (body layers)
             var clothing = new List<string>();
             try
             {
@@ -56,20 +45,13 @@ public static class TargetDescription
                         var layer = bodyLayers[i];
                         string path = layer.layerPath ?? "";
                         string itemName = ExtractClothingName(path);
-                        if (string.IsNullOrEmpty(itemName)) continue;
-
-                        // Skip face-related layers
-                        if (path.Contains("/Face/")) continue;
-
-                        string color = ColorToName(layer.layerTint);
-                        clothing.Add($"{color} {itemName}");
+                        if (string.IsNullOrEmpty(itemName) || path.Contains("/Face/")) continue;
+                        clothing.Add($"{ColorToName(layer.layerTint)} {itemName}");
                     }
                 }
             }
             catch { }
 
-            // Accessories
-            var accessories = new List<string>();
             string headwear = "";
             try
             {
@@ -82,45 +64,18 @@ public static class TargetDescription
                         string path = acc.path ?? "";
                         string itemName = ExtractAccessoryName(path);
                         if (string.IsNullOrEmpty(itemName)) continue;
-
                         string color = ColorToName(acc.color);
 
-                        if (path.Contains("/Head/"))
-                        {
-                            headwear = $"{color} {itemName}";
-                            accessories.Add(headwear);
-                        }
-                        else if (path.Contains("/Feet/"))
-                        {
-                            clothing.Add($"{color} {itemName}");
-                        }
-                        else if (path.Contains("/Chest/"))
-                        {
-                            // Insert jacket at beginning of clothing
-                            clothing.Insert(0, $"{color} {itemName}");
-                        }
-                        else if (!path.Contains("/Waist/") && !path.Contains("/Neck/") && !path.Contains("/Hands/"))
-                        {
-                            accessories.Add($"{color} {itemName}");
-                        }
+                        if (path.Contains("/Head/")) headwear = $"{color} {itemName}";
+                        else if (path.Contains("/Feet/")) clothing.Add($"{color} {itemName}");
+                        else if (path.Contains("/Chest/")) clothing.Insert(0, $"{color} {itemName}");
                     }
                 }
             }
             catch { }
 
-            // Build clothing sentence
-            if (clothing.Count > 0)
-            {
-                sb.Append("Wearing ");
-                sb.Append(JoinList(clothing));
-                sb.Append(". ");
-            }
-
-            // Headwear mention
-            if (!string.IsNullOrEmpty(headwear))
-            {
-                sb.Append($"Wearing a {headwear}. ");
-            }
+            if (clothing.Count > 0) { sb.Append("Wearing "); sb.Append(JoinList(clothing)); sb.Append(". "); }
+            if (!string.IsNullOrEmpty(headwear)) sb.Append($"Wearing a {headwear}. ");
 
             return sb.ToString().Trim();
         }
@@ -129,6 +84,12 @@ public static class TargetDescription
             Melon<HitmanModMain>.Logger.Warning($"[THM] TargetDescription failed: {ex.Message}");
             return "No description available.";
         }
+    }
+
+    public static string Generate(S1API.Entities.NPC npc)
+    {
+        var gameNpc = npc.gameObject?.GetComponent<Il2CppScheduleOne.NPCs.NPC>();
+        return GenerateFromGameNpc(gameNpc);
     }
 
     // ── Hair style mapping ──────────────────────────────────

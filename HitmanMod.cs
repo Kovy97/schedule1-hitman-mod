@@ -90,8 +90,8 @@ public class HitmanModMain : MelonMod
 
                     LoggerInstance.Msg($"NPC check: S1API={s1apiCount}, Il2Cpp_FindObjects={gameNpcCount}, CustomReady={customReady}, stable={_npcStableChecks}/{RequiredStableChecks}");
 
-                    // S1API NPC.All is what the mod actually uses — require it specifically
-                    if (s1apiCount < MinNpcCount)
+                    // Accept either S1API or Il2Cpp game NPCs meeting the minimum
+                    if (s1apiCount < MinNpcCount && gameNpcCount < MinNpcCount)
                     {
                         _npcStableChecks = 0;
                         return;

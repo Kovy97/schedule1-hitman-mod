@@ -1,0 +1,13 @@
+# Materials for Garrote Model
+
+newmtl HandleWood
+Kd 0.35 0.20 0.10
+Ka 0.05 0.03 0.01
+Ks 0.10 0.08 0.05
+Ns 20.0
+
+newmtl WireSteel
+Kd 0.78 0.78 0.80
+Ka 0.15 0.15 0.16
+Ks 0.90 0.90 0.92
+Ns 80.0

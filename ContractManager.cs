@@ -69,8 +69,9 @@ public class ContractManager
     // Exposed for dialogue patches / distract follow
     public NPC? TargetNpc => _targetNpc;
 
-    // Internal
+    // Internal — target is tracked as both S1API NPC (if available) and raw GameNPC (always)
     private NPC? _targetNpc;
+    private GameNPC? _targetGameNpc;
     private NPC? _clientNpc;
     private float _offerTimer;
     private float _nextOfferDelay;
@@ -95,9 +96,35 @@ public class ContractManager
     // ── Kill Bonus Tracking ──
     private bool _killUsedCable;
     private bool _killHadWitnesses;
+    private bool _killWasRaining;
+    private bool _killWasNight;
 
     public void SetKillUsedCable() => _killUsedCable = true;
     public void SetKillHadWitnesses() => _killHadWitnesses = true;
+
+    /// <summary>Snapshot weather and time conditions at the moment of the kill.</summary>
+    public void SnapshotKillConditions()
+    {
+        try
+        {
+            var weather = Il2CppScheduleOne.Weather.EnvironmentManager.Instance?.CurrentWeatherConditions;
+            _killWasRaining = weather != null && weather.Rainy > 0.1f;
+        }
+        catch { _killWasRaining = false; }
+
+        try
+        {
+            var timeMgr = Il2CppScheduleOne.GameTime.TimeManager.Instance;
+            if (timeMgr != null)
+            {
+                int time = timeMgr.CurrentTime;
+                _killWasNight = time >= 1800 || time < 600; // 6 PM to 6 AM
+            }
+        }
+        catch { _killWasNight = false; }
+
+        Melon<HitmanModMain>.Logger.Msg($"[THM] Kill conditions: rain={_killWasRaining}, night={_killWasNight}, cable={_killUsedCable}, witnesses={_killHadWitnesses}");
+    }
 
     public event Action? OnStateChanged;
 
@@ -176,9 +203,10 @@ public class ContractManager
 
         _nextOfferDelay = RandomFloat(MinOfferInterval, MaxOfferInterval);
         _offerTimer = 0f;
-        int validCount = GetValidTargets().Count;
-        int totalCount = NPC.All?.Count ?? 0;
-        Melon<HitmanModMain>.Logger.Msg($"ContractManager initialized. {validCount}/{totalCount} valid targets found.");
+        int s1apiValid = GetValidTargets().Count;
+        int gameValid = s1apiValid == 0 ? GetValidGameTargets().Count : 0;
+        int totalValid = s1apiValid + gameValid;
+        Melon<HitmanModMain>.Logger.Msg($"ContractManager initialized. {totalValid} valid targets (S1API={s1apiValid}, GameNPC={gameValid}).");
     }
 
     /// <summary>
@@ -277,15 +305,18 @@ public class ContractManager
 
                 try
                 {
-                    if (_targetNpc.IsDead)
+                    if (IsTargetDead)
                     {
                         if (ActiveContract.Type == ContractType.Kill)
+                        {
+                            SnapshotKillConditions();
                             CompleteContract();
+                        }
                         else
                             FailContract("I said knock them out, NOT kill them! Deal's off.");
                         return;
                     }
-                    if (_targetNpc.IsKnockedOut && ActiveContract.Type == ContractType.Knockout)
+                    if (IsTargetKnockedOut && ActiveContract.Type == ContractType.Knockout)
                     {
                         CompleteContract();
                         return;
@@ -392,10 +423,12 @@ public class ContractManager
             return LastRequestError;
         }
 
-        int count = NPC.All?.Count ?? 0;
-        Melon<HitmanModMain>.Logger.Msg($"RequestContract: NPC.All.Count={count}");
+        int s1apiCount = NPC.All?.Count ?? 0;
+        int gameNpcCount = 0;
+        try { gameNpcCount = UnityEngine.Object.FindObjectsOfType<GameNPC>()?.Length ?? 0; } catch { }
+        Melon<HitmanModMain>.Logger.Msg($"RequestContract: S1API={s1apiCount}, GameNPC={gameNpcCount}");
 
-        if (count == 0)
+        if (s1apiCount == 0 && gameNpcCount == 0)
         {
             LastRequestError = "No NPCs available yet. Try again later.";
             return LastRequestError;
@@ -748,34 +781,49 @@ public class ContractManager
 
     private void OfferNewContract()
     {
+        // Try S1API NPCs first, fall back to Il2Cpp GameNPCs
         var targets = GetValidTargets();
-        if (targets.Count == 0)
+        string targetName;
+        string targetDesc = "";
+
+        if (targets.Count > 0)
         {
-            Melon<HitmanModMain>.Logger.Warning("No valid targets available for contract.");
-            return;
+            var target = targets[Rng.Next(targets.Count)];
+            _targetNpc = target;
+            _targetGameNpc = target.gameObject?.GetComponent<GameNPC>();
+            targetName = target.FullName;
+            try { targetDesc = TargetDescription.Generate(target); } catch { }
+        }
+        else
+        {
+            // Fallback: use Il2Cpp GameNPCs directly
+            var gameTargets = GetValidGameTargets();
+            if (gameTargets.Count == 0)
+            {
+                Melon<HitmanModMain>.Logger.Warning("No valid targets (S1API or GameNPC).");
+                return;
+            }
+
+            var gameTarget = gameTargets[Rng.Next(gameTargets.Count)];
+            _targetNpc = null;
+            _targetGameNpc = gameTarget;
+            targetName = "?";
+            try { targetName = gameTarget.fullName; } catch { }
+            try { targetDesc = TargetDescription.GenerateFromGameNpc(gameTarget); } catch { }
         }
 
-        var target = targets[Rng.Next(targets.Count)];
-        var client = GetRandomClient(target);
-        if (client == null)
-        {
-            Melon<HitmanModMain>.Logger.Warning("No valid client NPC found.");
-            return;
-        }
+        var client = GetRandomClient(_targetNpc);
+        // If no S1API client, use MysteriousMan as fallback messenger
+        _clientNpc = client;
 
         var difficulty = PickWeightedDifficulty();
         var type = Rng.Next(2) == 0 ? ContractType.Kill : ContractType.Knockout;
         var reward = CalculateReward(difficulty, type);
 
-        // Generate target description
-        string targetDesc = "";
-        try { targetDesc = TargetDescription.Generate(target); }
-        catch { }
-
         var contract = new Contract
         {
             Id = Guid.NewGuid().ToString("N")[..8],
-            TargetName = target.FullName,
+            TargetName = targetName,
             TargetDescription = targetDesc,
             Type = type,
             Difficulty = difficulty,
@@ -784,8 +832,6 @@ public class ContractManager
         };
 
         PendingOffer = contract;
-        _targetNpc = target;
-        _clientNpc = client;
         _pendingOfferTimer = 0f;
 
         string typeDesc = type == ContractType.Kill
@@ -808,7 +854,7 @@ public class ContractManager
             return;
         }
         OnStateChanged?.Invoke();
-        Melon<HitmanModMain>.Logger.Msg($"Contract offered: {type} {target.FullName} ({difficulty}) for ${reward}");
+        Melon<HitmanModMain>.Logger.Msg($"Contract offered: {type} {targetName} ({difficulty}) for ${reward}");
     }
 
     private void OnContractAccepted()
@@ -934,20 +980,47 @@ public class ContractManager
         float bonusTotal = 0f;
         string bonusText = "";
 
-        if (!_killHadWitnesses)
+        // Stealthy: Fibre Wire kill + no witnesses (+15%)
+        if (_killUsedCable && !_killHadWitnesses)
         {
-            float silenceBonus = baseReward * 0.25f; // +25% for no witnesses
-            bonusTotal += silenceBonus;
-            bonusText += $"\n<b>+${silenceBonus:N0}</b> Silence Bonus (no witnesses)";
-            Melon<HitmanModMain>.Logger.Msg($"[THM] Bonus: Silence +${silenceBonus:N0} (25%)");
+            float bonus = baseReward * 0.15f;
+            bonusTotal += bonus;
+            bonusText += $"\n☠ <b>+${bonus:N0}</b> Stealthy Bonus";
+            Melon<HitmanModMain>.Logger.Msg($"[THM] Bonus: Stealthy +${bonus:N0} (15%)");
+        }
+        // Silent Kill: Fibre Wire used (but had witnesses, so no Stealthy)
+        else if (_killUsedCable)
+        {
+            float bonus = baseReward * 0.10f;
+            bonusTotal += bonus;
+            bonusText += $"\n🔪 <b>+${bonus:N0}</b> Silent Kill Bonus";
+            Melon<HitmanModMain>.Logger.Msg($"[THM] Bonus: Silent Kill +${bonus:N0} (10%)");
+        }
+        // No witnesses but no cable
+        else if (!_killHadWitnesses)
+        {
+            float bonus = baseReward * 0.10f;
+            bonusTotal += bonus;
+            bonusText += $"\n👻 <b>+${bonus:N0}</b> Ghost Bonus";
+            Melon<HitmanModMain>.Logger.Msg($"[THM] Bonus: Ghost +${bonus:N0} (10%)");
         }
 
-        if (_killUsedCable)
+        // Rain Kill: it was raining during the kill (+10%)
+        if (_killWasRaining)
         {
-            float cableBonus = baseReward * 0.20f; // +20% for using fibre cable
-            bonusTotal += cableBonus;
-            bonusText += $"\n<b>+${cableBonus:N0}</b> Silent Kill Bonus (Fibre Cable)";
-            Melon<HitmanModMain>.Logger.Msg($"[THM] Bonus: Silent Kill +${cableBonus:N0} (20%)");
+            float bonus = baseReward * 0.10f;
+            bonusTotal += bonus;
+            bonusText += $"\n🌧 <b>+${bonus:N0}</b> Rain Kill Bonus";
+            Melon<HitmanModMain>.Logger.Msg($"[THM] Bonus: Rain Kill +${bonus:N0} (10%)");
+        }
+
+        // Night Owl: kill after 6 PM (+10%)
+        if (_killWasNight)
+        {
+            float bonus = baseReward * 0.10f;
+            bonusTotal += bonus;
+            bonusText += $"\n🌙 <b>+${bonus:N0}</b> Night Owl Bonus";
+            Melon<HitmanModMain>.Logger.Msg($"[THM] Bonus: Night Owl +${bonus:N0} (10%)");
         }
 
         float reward = baseReward + bonusTotal;
@@ -955,6 +1028,8 @@ public class ContractManager
         // Reset bonus flags
         _killUsedCable = false;
         _killHadWitnesses = false;
+        _killWasRaining = false;
+        _killWasNight = false;
 
         CompletedCount++;
         AddExperience(ActiveContract.Difficulty);
@@ -1360,6 +1435,65 @@ public class ContractManager
 
     private static readonly List<NPC> _reusableTargets = new(128);
     private static readonly List<NPC> _reusableClients = new(128);
+    private static readonly List<GameNPC> _reusableGameTargets = new(128);
+
+    // ── Helper properties for target access (works with both S1API and GameNPC) ──
+
+    private bool IsTargetDead
+    {
+        get
+        {
+            try { if (_targetNpc != null) return _targetNpc.IsDead; }
+            catch { }
+            try { if (_targetGameNpc != null) return _targetGameNpc.Health.IsDead; }
+            catch { }
+            return false;
+        }
+    }
+
+    private bool IsTargetKnockedOut
+    {
+        get
+        {
+            try { if (_targetNpc != null) return _targetNpc.IsKnockedOut; }
+            catch { }
+            try { if (_targetGameNpc != null) return !_targetGameNpc.Health.IsDead && _targetGameNpc.Health.IsKnockedOut; }
+            catch { }
+            return false;
+        }
+    }
+
+    private string TargetFullName
+    {
+        get
+        {
+            try { if (_targetNpc != null) return _targetNpc.FullName; }
+            catch { }
+            try { if (_targetGameNpc != null) return _targetGameNpc.fullName; }
+            catch { }
+            return ActiveContract?.TargetName ?? "Unknown";
+        }
+    }
+
+    private Vector3 TargetPosition
+    {
+        get
+        {
+            try { if (_targetNpc?.gameObject != null) return _targetNpc.gameObject.transform.position; }
+            catch { }
+            try { if (_targetGameNpc != null) return _targetGameNpc.transform.position; }
+            catch { }
+            return Vector3.zero;
+        }
+    }
+
+    private bool IsNpcValidAny => IsNpcValid(_targetNpc) || IsGameNpcValid(_targetGameNpc);
+
+    private static bool IsGameNpcValid(GameNPC? npc)
+    {
+        try { return npc != null && npc.gameObject != null; }
+        catch { return false; }
+    }
 
     private List<NPC> GetValidTargets()
     {
@@ -1380,22 +1514,73 @@ public class ContractManager
                     if (IsExcludedNpc(n)) { skippedExcluded++; continue; }
                     _reusableTargets.Add(n);
                 }
-                catch
-                {
-                    skippedInvalid++;
-                }
+                catch { skippedInvalid++; }
             }
         }
         catch (Exception ex)
         {
-            Melon<HitmanModMain>.Logger.Warning($"GetValidTargets: NPC.All iteration failed after {total} NPCs: {ex.Message}");
+            Melon<HitmanModMain>.Logger.Warning($"GetValidTargets: NPC.All failed after {total}: {ex.Message}");
         }
         if (_reusableTargets.Count == 0 && total > 0)
         {
-            Melon<HitmanModMain>.Logger.Warning(
-                $"GetValidTargets: 0/{total} passed — invalid={skippedInvalid}, notPhysical={skippedNotPhysical}, dead/KO={skippedDead}, excluded={skippedExcluded}");
+            Melon<HitmanModMain>.Logger.Msg(
+                $"GetValidTargets: 0/{total} S1API NPCs passed (excluded={skippedExcluded}). Falling back to GameNPC scan.");
         }
         return _reusableTargets;
+    }
+
+    /// <summary>
+    /// Fallback: scan all Il2Cpp GameNPCs directly when S1API NPC.All has no valid targets.
+    /// </summary>
+    private List<GameNPC> GetValidGameTargets()
+    {
+        _reusableGameTargets.Clear();
+        int total = 0, skipped = 0;
+        try
+        {
+            var allNpcs = UnityEngine.Object.FindObjectsOfType<GameNPC>();
+            if (allNpcs == null) return _reusableGameTargets;
+
+            foreach (var npc in allNpcs)
+            {
+                total++;
+                try
+                {
+                    if (npc == null) continue;
+                    if (npc.gameObject == null || !npc.gameObject.activeInHierarchy) continue;
+                    try { if (npc.Health.IsDead) continue; } catch { continue; }
+
+                    // Exclude special NPC types
+                    try
+                    {
+                        if (npc.TryCast<GameDealer>() != null) { skipped++; continue; }
+                        if (npc.TryCast<GameEmployee>() != null) { skipped++; continue; }
+                        if (npc.TryCast<GameSupplier>() != null) { skipped++; continue; }
+                        if (npc.TryCast<GameCartelGoon>() != null) { skipped++; continue; }
+                        if (npc.TryCast<GamePoliceOfficer>() != null) { skipped++; continue; }
+                    }
+                    catch { }
+
+                    // Exclude by name patterns
+                    string name = "";
+                    try { name = npc.fullName ?? ""; } catch { }
+                    if (string.IsNullOrEmpty(name)) continue;
+                    if (name.Contains("Mysterious") || name.Contains("Goon") ||
+                        name.Contains("Guard") || name.Contains("Officer"))
+                    { skipped++; continue; }
+
+                    _reusableGameTargets.Add(npc);
+                }
+                catch { }
+            }
+        }
+        catch (Exception ex)
+        {
+            Melon<HitmanModMain>.Logger.Warning($"GetValidGameTargets failed: {ex.Message}");
+        }
+
+        Melon<HitmanModMain>.Logger.Msg($"GetValidGameTargets: {_reusableGameTargets.Count}/{total} passed (skipped={skipped}).");
+        return _reusableGameTargets;
     }
 
     private NPC? GetRandomClient(NPC excludeTarget)

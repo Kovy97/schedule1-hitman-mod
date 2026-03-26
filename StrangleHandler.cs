@@ -43,14 +43,18 @@ public static class StrangleHandler
         {
             if (!_crimeReported)
                 ApplyCrimeVisibility();
+            CableVisual.SetStrangling(true);
+            CableVisual.Update();
             StrangleMiniGame.Update(dt);
             return;
         }
 
+        bool cableEquipped = false;
         bool cableReady = false;
         try
         {
-            if (IsCableEquipped())
+            cableEquipped = IsCableEquipped();
+            if (cableEquipped)
             {
                 var gp = GamePlayer.Local;
                 if (gp != null && gp.Crouched)
@@ -58,6 +62,14 @@ public static class StrangleHandler
             }
         }
         catch { }
+
+        // Show/hide cable visual when equipped (toggle visibility, don't recreate)
+        CableVisual.SetVisible(cableEquipped);
+        if (cableEquipped)
+        {
+            CableVisual.SetStrangling(false);
+            CableVisual.Update();
+        }
 
         SetHudVisible(cableReady);
         if (!cableReady) return;
@@ -111,6 +123,7 @@ public static class StrangleHandler
 
     public static void Reset()
     {
+        CableVisual.Destroy();
         UnfreezeNpc();
         _pendingTarget = null;
         _pendingGameNpc = null;
@@ -227,6 +240,8 @@ public static class StrangleHandler
     private static void OnMiniGameComplete(bool success)
     {
         UnfreezeNpc();
+        // Remove passive visibility state now — witnesses were already notified directly
+        // in ApplyCrimeVisibility(). This prevents late-arriving NPCs from reacting.
         RemoveCrimeVisibility();
 
         if (success)
@@ -244,11 +259,14 @@ public static class StrangleHandler
                     if (gp?.CrimeData != null)
                     {
                         var level = gp.CrimeData.CurrentPursuitLevel;
-                        if ((int)level > 0) // anything above None = witnessed
+                        if ((int)level > 0)
                             mgr.SetKillHadWitnesses();
                     }
                 }
                 catch { }
+
+                // Snapshot weather & time for bonus calculation
+                mgr.SnapshotKillConditions();
             }
             TryKillTarget();
         }
@@ -333,10 +351,13 @@ public static class StrangleHandler
 
     private const string CrimeStateLabel = "THM_Strangulation";
 
+    private const float WitnessRadius = 15f;
+
     /// <summary>
-    /// Marks the player as committing a PettyCrime via the game's own EntityVisibility system.
-    /// Nearby NPCs with VisionCones will detect this naturally — same as dealing, pickpocketing, etc.
-    /// The game handles everything: question marks, phone calls, police dispatch.
+    /// Two-pronged crime reporting:
+    /// 1. Passive: Apply Brandishing visibility state so police VisionCones detect it.
+    /// 2. Active: Directly notify nearby civilian NPCs via their Responses system,
+    ///    bypassing VisionCone StatesOfInterest limitations.
     /// </summary>
     private static void ApplyCrimeVisibility()
     {
@@ -346,13 +367,110 @@ public static class StrangleHandler
             var gp = GamePlayer.Local;
             if (gp == null) return;
 
-            // Apply the crime state — auto-removes after 10 seconds
+            // 1. Passive detection — police and NPCs with Brandishing in their VisionCone
             gp.Visibility.ApplyState(
                 CrimeStateLabel,
-                Il2CppScheduleOne.Vision.EVisualState.PettyCrime,
+                Il2CppScheduleOne.Vision.EVisualState.Brandishing,
                 10f);
 
-            Melon<HitmanModMain>.Logger.Msg("[THM] Crime visibility applied: PettyCrime (game handles NPC reactions).");
+            // 2. Active witness check — simple distance + facing + raycast LOS
+            var playerPos = gp.transform.position + Vector3.up; // eye height
+            var allNpcs = UnityEngine.Object.FindObjectsOfType<GameNPC>();
+            int inRange = 0;
+            int witnessed = 0;
+
+            if (allNpcs != null)
+            {
+                foreach (var npc in allNpcs)
+                {
+                    try
+                    {
+                        if (npc == null) continue;
+                        if (npc == _pendingGameNpc) continue;
+                        try { if (npc.Health.IsDead) continue; } catch { }
+
+                        var npcPos = npc.transform.position + Vector3.up;
+                        float dist = Vector3.Distance(npcPos, playerPos);
+                        if (dist > WitnessRadius) continue;
+
+                        string npcName = "?";
+                        try { npcName = npc.fullName; } catch { try { npcName = npc.gameObject.name; } catch { } }
+                        inRange++;
+
+                        // Check 1: NPC must be roughly facing the player (within ~120° FOV)
+                        var npcFwd = npc.transform.forward;
+                        var dirToPlayer = (playerPos - npcPos).normalized;
+                        float dot = Vector3.Dot(npcFwd, dirToPlayer);
+                        if (dot < -0.1f) // facing away
+                        {
+                            Melon<HitmanModMain>.Logger.Msg($"[THM] {npcName} at {dist:F1}m — facing away (dot={dot:F2}), not a witness.");
+                            continue;
+                        }
+
+                        // Check 2: Physics raycast — no wall between NPC and player
+                        var ray = new Ray(npcPos, dirToPlayer);
+                        bool blocked = Physics.Raycast(ray, out var hit, dist) &&
+                                       hit.collider.gameObject.GetComponent<GameNPC>() == null &&
+                                       hit.collider.gameObject.GetComponentInParent<GameNPC>() == null &&
+                                       hit.distance < dist - 0.5f;
+                        if (blocked)
+                        {
+                            Melon<HitmanModMain>.Logger.Msg($"[THM] {npcName} at {dist:F1}m — blocked by {hit.collider.gameObject.name}, not a witness.");
+                            continue;
+                        }
+
+                        // This NPC is a witness — trigger native police call
+                        try
+                        {
+                            npc.Actions.SetCallPoliceBehaviourCrime(new Il2CppScheduleOne.Law.DeadlyAssault());
+                            npc.Actions.CallPolice_Networked(gp.NetworkObject);
+                            Melon<HitmanModMain>.Logger.Msg($"[THM] Witness: {npcName} at {dist:F1}m (dot={dot:F2}) — calling police!");
+                        }
+                        catch (Exception ex)
+                        {
+                            Melon<HitmanModMain>.Logger.Warning($"[THM] CallPolice failed on {npcName}: {ex.Message}");
+                        }
+
+                        witnessed++;
+                    }
+                    catch { }
+                }
+            }
+
+            Melon<HitmanModMain>.Logger.Msg($"[THM] Witness check: {inRange} NPCs in range, {witnessed} witnessed.");
+            if (witnessed > 0)
+            {
+                // Murder witnessed — escalate beyond Investigating immediately
+                try
+                {
+                    // Wanted state: nearby police react on sight without waiting for phone call
+                    gp.Visibility.ApplyState(
+                        "THM_Wanted",
+                        Il2CppScheduleOne.Vision.EVisualState.Wanted,
+                        120f);
+
+                    // Escalate to Arresting via reflection (bypasses Investigating delay)
+                    var cd = gp.CrimeData;
+                    if (cd != null)
+                    {
+                        var method = cd.GetType().GetMethod("SetPursuitLevel");
+                        if (method != null)
+                        {
+                            // 2 = Arresting (0=None, 1=Investigating, 2=Arresting, 3=NonLethal, 4=Lethal)
+                            method.Invoke(cd, new object[] { 2, true });
+                            Melon<HitmanModMain>.Logger.Msg("[THM] Pursuit escalated to Arresting — murder witnessed.");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Melon<HitmanModMain>.Logger.Warning($"[THM] Pursuit escalation failed: {ex.Message}");
+                }
+            }
+            else
+            {
+                Melon<HitmanModMain>.Logger.Msg("[THM] No witnesses — clean kill.");
+            }
         }
         catch (Exception ex)
         {
