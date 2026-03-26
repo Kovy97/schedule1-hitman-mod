@@ -47,6 +47,9 @@ public class ContractManager
 
         // Refresh the app UI so it shows unlocked state
         try { HitmanApp.Instance?.RefreshUI(); } catch { }
+
+        // Save immediately so unlock persists even if game crashes/quits
+        try { HitmanModMain.Instance?.ContractManager?.Save(); } catch { }
     }
 
     // Level system
@@ -371,7 +374,6 @@ public class ContractManager
                     {
                         if (ActiveContract.Type == ContractType.Kill)
                         {
-                            Melon<HitmanModMain>.Logger.Msg($"Target NPC destroyed ({ex.GetType().Name}: {ex.Message}), assuming kill — completing contract.");
                             CompleteContract();
                         }
                         else
@@ -561,7 +563,6 @@ public class ContractManager
                 if (Math.Abs(correction) > 0.01f)
                 {
                     rel.Add(correction);
-                    Melon<HitmanModMain>.Logger.Msg($"Restored target relationship on abort: {currentDelta:F2} → {_savedTargetRelationship.Value:F2} (correction: {correction:+0.00;-0.00})");
                 }
             }
             catch (Exception ex)
@@ -595,7 +596,6 @@ public class ContractManager
         if (newClient != null)
         {
             _clientNpc = newClient;
-            Melon<HitmanModMain>.Logger.Msg("Client NPC reassigned (previous client invalid).");
         }
     }
 
@@ -1080,10 +1080,7 @@ public class ContractManager
                     {
                         var poi = drop.PoI;
                         if (poi != null)
-                        {
                             poi.SetMainText("$ Payment");
-                            Melon<HitmanModMain>.Logger.Msg($"[THM] Dead drop POI activated: {dropName}");
-                        }
 
                         // Also try compass marker
                         var compass = CompassManager.Instance;
@@ -1091,10 +1088,7 @@ public class ContractManager
                         {
                             var prefab = compass.ElementPrefab?.GetComponent<UnityEngine.RectTransform>();
                             if (prefab != null)
-                            {
                                 _compassElement = compass.AddElement(drop.transform, prefab, true);
-                                Melon<HitmanModMain>.Logger.Msg($"[THM] Compass element added for dead drop.");
-                            }
                         }
                     }
                     catch (Exception ex)
@@ -1152,7 +1146,6 @@ public class ContractManager
                 if (Math.Abs(correction) > 0.01f)
                 {
                     rel.Add(correction);
-                    Melon<HitmanModMain>.Logger.Msg($"Restored target relationship: {currentDelta:F2} → {_savedTargetRelationship.Value:F2} (correction: {correction:+0.00;-0.00})");
                 }
             }
             catch (Exception ex)
@@ -1366,7 +1359,6 @@ public class ContractManager
     // ===================== HELPERS =====================
 
     private static readonly Dictionary<System.Type, bool> _typeIsExcluded = new();
-    private static bool _gameNpcPropsLogged;
 
     private static readonly HashSet<string> _excludedTypeNames = new()
     {
@@ -1521,32 +1513,24 @@ public class ContractManager
     {
         _reusableTargets.Clear();
         if (NPC.All == null) return _reusableTargets;
-        int total = 0, skippedInvalid = 0, skippedNotPhysical = 0, skippedDead = 0, skippedExcluded = 0;
         try
         {
             foreach (var n in NPC.All)
             {
-                total++;
                 try
                 {
-                    if (n == null) { skippedInvalid++; continue; }
-                    if (n.gameObject == null || !n.gameObject.activeInHierarchy)
-                    { skippedNotPhysical++; continue; }
-                    if (n.IsDead || n.IsKnockedOut) { skippedDead++; continue; }
-                    if (IsExcludedNpc(n)) { skippedExcluded++; continue; }
+                    if (n == null) continue;
+                    if (n.gameObject == null || !n.gameObject.activeInHierarchy) continue;
+                    if (n.IsDead || n.IsKnockedOut) continue;
+                    if (IsExcludedNpc(n)) continue;
                     _reusableTargets.Add(n);
                 }
-                catch { skippedInvalid++; }
+                catch { }
             }
         }
         catch (Exception ex)
         {
-            Melon<HitmanModMain>.Logger.Warning($"GetValidTargets: NPC.All failed after {total}: {ex.Message}");
-        }
-        if (_reusableTargets.Count == 0 && total > 0)
-        {
-            Melon<HitmanModMain>.Logger.Msg(
-                $"GetValidTargets: 0/{total} S1API NPCs passed (excluded={skippedExcluded}). Falling back to GameNPC scan.");
+            Melon<HitmanModMain>.Logger.Warning($"GetValidTargets: NPC.All iteration failed: {ex.Message}");
         }
         return _reusableTargets;
     }
@@ -1557,7 +1541,6 @@ public class ContractManager
     private List<GameNPC> GetValidGameTargets()
     {
         _reusableGameTargets.Clear();
-        int total = 0, skipped = 0;
         try
         {
             var allNpcs = UnityEngine.Object.FindObjectsOfType<GameNPC>();
@@ -1565,7 +1548,6 @@ public class ContractManager
 
             foreach (var npc in allNpcs)
             {
-                total++;
                 try
                 {
                     if (npc == null) continue;
@@ -1575,11 +1557,11 @@ public class ContractManager
                     // Exclude special NPC types
                     try
                     {
-                        if (npc.TryCast<GameDealer>() != null) { skipped++; continue; }
-                        if (npc.TryCast<GameEmployee>() != null) { skipped++; continue; }
-                        if (npc.TryCast<GameSupplier>() != null) { skipped++; continue; }
-                        if (npc.TryCast<GameCartelGoon>() != null) { skipped++; continue; }
-                        if (npc.TryCast<GamePoliceOfficer>() != null) { skipped++; continue; }
+                        if (npc.TryCast<GameDealer>() != null) continue;
+                        if (npc.TryCast<GameEmployee>() != null) continue;
+                        if (npc.TryCast<GameSupplier>() != null) continue;
+                        if (npc.TryCast<GameCartelGoon>() != null) continue;
+                        if (npc.TryCast<GamePoliceOfficer>() != null) continue;
                     }
                     catch { }
 
@@ -1587,7 +1569,7 @@ public class ContractManager
                     string name = "";
                     try { name = npc.fullName ?? ""; } catch { }
                     if (string.IsNullOrEmpty(name)) continue;
-                    if (IsExcludedByName(name)) { skipped++; continue; }
+                    if (IsExcludedByName(name)) continue;
 
                     _reusableGameTargets.Add(npc);
                 }
@@ -1599,7 +1581,6 @@ public class ContractManager
             Melon<HitmanModMain>.Logger.Warning($"GetValidGameTargets failed: {ex.Message}");
         }
 
-        Melon<HitmanModMain>.Logger.Msg($"GetValidGameTargets: {_reusableGameTargets.Count}/{total} passed (skipped={skipped}).");
         return _reusableGameTargets;
     }
 
@@ -1675,9 +1656,11 @@ public class ContractManager
             if (sm != null)
             {
                 _saveDelegate = (UnityAction)OnGameSaved;
+                // Hook both start and complete for maximum coverage
                 sm.onSaveComplete.AddListener(_saveDelegate);
+                try { sm.onSaveStart.AddListener(_saveDelegate); } catch { }
                 _saveHooked = true;
-                Melon<HitmanModMain>.Logger.Msg("Hooked into game SaveManager.");
+                Melon<HitmanModMain>.Logger.Msg("Hooked into game SaveManager (onSaveStart + onSaveComplete).");
             }
         }
         catch (Exception ex)
@@ -1693,7 +1676,10 @@ public class ContractManager
         {
             var sm = SaveManager.Instance;
             if (sm != null)
+            {
                 sm.onSaveComplete.RemoveListener(_saveDelegate);
+                try { sm.onSaveStart.RemoveListener(_saveDelegate); } catch { }
+            }
         }
         catch { }
         _saveDelegate = null;
@@ -1703,6 +1689,7 @@ public class ContractManager
     private void OnGameSaved()
     {
         if (!_saveEnabled) return;
+        Melon<HitmanModMain>.Logger.Msg("[THM] Game save detected — saving mod data...");
         Save();
     }
 

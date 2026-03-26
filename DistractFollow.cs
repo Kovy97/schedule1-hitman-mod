@@ -69,10 +69,7 @@ public static class DistractFollow
         try
         {
             if (_targetGame?.Behaviour != null)
-            {
                 _targetGame.Behaviour.enabled = false;
-                Melon<HitmanModMain>.Logger.Msg("[THM] Distract: NPC behaviour disabled.");
-            }
         }
         catch { }
 

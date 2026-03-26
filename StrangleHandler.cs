@@ -21,7 +21,6 @@ public static class StrangleHandler
 {
     private const float MaxRayDist = 3.0f;   // max ray distance for target
     private const float BehindDot  = 0.2f;   // player must be behind NPC (dot ≤ this)
-    private static float _debugTimer;
     private static bool  _crimeReported;
 
     private static NPC?     _pendingTarget;
@@ -74,14 +73,6 @@ public static class StrangleHandler
         SetHudVisible(cableReady);
         if (!cableReady) return;
 
-        // Debug
-        _debugTimer -= dt;
-        if (_debugTimer <= 0f)
-        {
-            _debugTimer = 3f;
-            DebugLogRaycast();
-        }
-
         // E pressed → raycast for target
         try
         {
@@ -109,11 +100,7 @@ public static class StrangleHandler
 
                         string name = "unknown";
                         try { name = gameNpc.fullName; } catch { try { name = gameNpc.gameObject.name; } catch { } }
-                        Melon<HitmanModMain>.Logger.Msg($"[THM] Strangle: mini-game started on {name} (dot={dot:F2}).");
-                    }
-                    else
-                    {
-                        Melon<HitmanModMain>.Logger.Msg($"[THM] Strangle: NPC found but you're not behind them (dot={dot:F2}, need ≤{BehindDot}).");
+                        Melon<HitmanModMain>.Logger.Msg($"[THM] Strangle: mini-game started on {name}.");
                     }
                 }
             }
@@ -195,44 +182,6 @@ public static class StrangleHandler
         }
         catch { }
         return null;
-    }
-
-    private static void DebugLogRaycast()
-    {
-        try
-        {
-            var cam = Camera.main;
-            if (cam == null) { Melon<HitmanModMain>.Logger.Msg("[THM] Strangle debug: no main camera"); return; }
-
-            var ray = new Ray(cam.transform.position, cam.transform.forward);
-            if (Physics.Raycast(ray, out var hit, MaxRayDist))
-            {
-                var go = hit.collider.gameObject;
-                var npc = go.GetComponent<GameNPC>() ?? go.GetComponentInParent<GameNPC>();
-                if (npc != null)
-                {
-                    var gp = GamePlayer.Local;
-                    var npcFwd = npc.transform.forward;
-                    var npcToPlayer = (gp.transform.position - npc.transform.position).normalized;
-                    float dot = Vector3.Dot(npcFwd, npcToPlayer);
-                    string name = "?";
-                    try { name = npc.fullName; } catch { }
-                    Melon<HitmanModMain>.Logger.Msg($"[THM] Strangle debug: looking at {name}, dist={hit.distance:F1}m, dot={dot:F2} (need ≤{BehindDot})");
-                }
-                else
-                {
-                    Melon<HitmanModMain>.Logger.Msg($"[THM] Strangle debug: looking at {go.name} (not an NPC), dist={hit.distance:F1}m");
-                }
-            }
-            else
-            {
-                Melon<HitmanModMain>.Logger.Msg("[THM] Strangle debug: raycast hit nothing within 3m");
-            }
-        }
-        catch (Exception ex)
-        {
-            Melon<HitmanModMain>.Logger.Warning($"[THM] Strangle debug failed: {ex.Message}");
-        }
     }
 
     // ── Mini-game callback ────────────────────────────────────────────────────
@@ -413,10 +362,7 @@ public static class StrangleHandler
                         var dirToPlayer = (playerPos - npcPos).normalized;
                         float dot = Vector3.Dot(npcFwd, dirToPlayer);
                         if (dot < -0.1f) // facing away
-                        {
-                            Melon<HitmanModMain>.Logger.Msg($"[THM] {npcName} at {dist:F1}m — facing away (dot={dot:F2}), not a witness.");
                             continue;
-                        }
 
                         // Check 2: Physics raycast — no wall between NPC and player
                         var ray = new Ray(npcPos, dirToPlayer);
@@ -425,17 +371,14 @@ public static class StrangleHandler
                                        hit.collider.gameObject.GetComponentInParent<GameNPC>() == null &&
                                        hit.distance < dist - 0.5f;
                         if (blocked)
-                        {
-                            Melon<HitmanModMain>.Logger.Msg($"[THM] {npcName} at {dist:F1}m — blocked by {hit.collider.gameObject.name}, not a witness.");
                             continue;
-                        }
 
                         // This NPC is a witness — trigger native police call
                         try
                         {
                             npc.Actions.SetCallPoliceBehaviourCrime(new Il2CppScheduleOne.Law.DeadlyAssault());
                             npc.Actions.CallPolice_Networked(gp.NetworkObject);
-                            Melon<HitmanModMain>.Logger.Msg($"[THM] Witness: {npcName} at {dist:F1}m (dot={dot:F2}) — calling police!");
+                            Melon<HitmanModMain>.Logger.Msg($"[THM] Witness: {npcName} at {dist:F1}m — calling police!");
                         }
                         catch (Exception ex)
                         {

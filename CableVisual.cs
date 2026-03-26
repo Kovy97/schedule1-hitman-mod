@@ -64,10 +64,7 @@ public static class CableVisual
             if (cam == null) return;
 
             if (_instance.transform.parent != cam.transform)
-            {
                 _instance.transform.SetParent(cam.transform, false);
-                Melon<HitmanModMain>.Logger.Msg("[THM] CableVisual parented to camera.");
-            }
 
             // Only update local offset (cheap, no jitter)
             var off = _strangling ? StrangleOffset : IdleOffset;
@@ -96,7 +93,6 @@ public static class CableVisual
                 {
                     bytes = new byte[stream.Length];
                     stream.Read(bytes, 0, bytes.Length);
-                    Melon<HitmanModMain>.Logger.Msg($"[THM] Loaded garrote from embedded resource: {bytes.Length:N0} bytes.");
                 }
             }
             catch { }
@@ -115,7 +111,6 @@ public static class CableVisual
                     if (File.Exists(c))
                     {
                         bytes = File.ReadAllBytes(c);
-                        Melon<HitmanModMain>.Logger.Msg($"[THM] Loaded garrote from file: {bytes.Length:N0} bytes.");
                         break;
                     }
                 }
@@ -136,17 +131,6 @@ public static class CableVisual
                 _bundleFailed = true;
                 return;
             }
-
-            Melon<HitmanModMain>.Logger.Msg("[THM] Bundle loaded. Listing assets...");
-
-            // List all assets
-            try
-            {
-                var names = bundle.GetAllAssetNames();
-                foreach (var n in names)
-                    Melon<HitmanModMain>.Logger.Msg($"[THM]   Asset: {n}");
-            }
-            catch { }
 
             // Load the prefab
             _prefab = bundle.LoadAsset<GameObject>("cablewire");
@@ -208,7 +192,6 @@ public static class CableVisual
                 FixMaterials(_instance);
 
             _visible = true;
-            Melon<HitmanModMain>.Logger.Msg("[THM] Garrote model instantiated.");
         }
         catch (Exception ex)
         {
@@ -255,7 +238,7 @@ public static class CableVisual
                     if (mats != null && mats.Length > 0 && mats[0]?.shader != null)
                     {
                         _gameShader = mats[0].shader;
-                        Melon<HitmanModMain>.Logger.Msg($"[THM] Fallback shader: '{mats[0].shader.name}'");
+                        Melon<HitmanModMain>.Logger.Msg($"[THM] Acquired game shader: '{mats[0].shader.name}' (fallback)");
                         return;
                     }
                 }
@@ -321,8 +304,6 @@ public static class CableVisual
 
                 renderer.materials = newMats;
             }
-
-            Melon<HitmanModMain>.Logger.Msg("[THM] Materials fixed with game shader.");
         }
         catch (Exception ex)
         {

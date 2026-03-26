@@ -88,8 +88,6 @@ public class HitmanModMain : MelonMod
                         LoggerInstance.Warning($"Direct FindObjectsOfType<NPC> failed: {ex.Message}");
                     }
 
-                    LoggerInstance.Msg($"NPC check: S1API={s1apiCount}, Il2Cpp_FindObjects={gameNpcCount}, CustomReady={customReady}, stable={_npcStableChecks}/{RequiredStableChecks}");
-
                     // Accept either S1API or Il2Cpp game NPCs meeting the minimum
                     if (s1apiCount < MinNpcCount && gameNpcCount < MinNpcCount)
                     {
@@ -201,10 +199,7 @@ public class HitmanModMain : MelonMod
             // Check if Registry is ready by looking up a known vanilla item
             var test = Il2CppScheduleOne.Registry.GetItem("cuke");
             if (test == null)
-            {
-                LoggerInstance.Msg("[THM] Registry not ready yet, retrying cable registration...");
                 return;
-            }
 
             FibreGlassCable.Register();
             _cableRegistered = true;
