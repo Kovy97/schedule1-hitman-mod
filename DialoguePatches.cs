@@ -2,8 +2,10 @@ using System;
 using Il2CppScheduleOne.Dialogue;
 using MelonLoader;
 using S1API.Entities;
+using UnityEngine;
 using UnityEngine.Events;
 using DialogueChoice = Il2CppScheduleOne.Dialogue.DialogueController.DialogueChoice;
+using GameNPC = Il2CppScheduleOne.NPCs.NPC;
 
 namespace HitmanMod;
 
@@ -17,15 +19,21 @@ public static class DistractChoiceInjector
     private static DialogueController? _cachedController;
     private static DialogueChoice? _injectedChoice;
 
-    public static void InjectChoice(NPC targetNpc)
+    public static void InjectChoice(NPC targetNpc) => InjectChoiceOnGameObject(targetNpc.gameObject, targetNpc.FullName);
+
+    public static void InjectChoiceFromGameNpc(GameNPC gameNpc)
+    {
+        string name = "?";
+        try { name = gameNpc.fullName; } catch { }
+        InjectChoiceOnGameObject(gameNpc.gameObject, name);
+    }
+
+    private static void InjectChoiceOnGameObject(GameObject go, string npcName)
     {
         RemoveChoice();
 
         try
         {
-            var go = targetNpc.gameObject;
-
-            // Try root first, then children (some NPCs have controller on child object)
             var controller = go.GetComponent<DialogueController>();
             if (controller == null)
                 controller = go.GetComponentInChildren<DialogueController>();
@@ -44,7 +52,7 @@ public static class DistractChoiceInjector
             _cachedController = controller;
             _injectedChoice = choice;
 
-            Melon<HitmanModMain>.Logger.Msg($"[THM] Distract choice injected into {targetNpc.FullName}'s dialogue.");
+            Melon<HitmanModMain>.Logger.Msg($"[THM] Distract choice injected into {npcName}'s dialogue.");
         }
         catch (Exception ex)
         {
@@ -69,8 +77,12 @@ public static class DistractChoiceInjector
         try
         {
             var mgr = HitmanModMain.Instance?.ContractManager;
-            if (mgr?.TargetNpc != null)
+            if (mgr == null) return;
+
+            if (mgr.TargetNpc != null)
                 DistractFollow.StartFollowing(mgr.TargetNpc);
+            else if (mgr.TargetGameNpc != null)
+                DistractFollow.StartFollowingGameNpc(mgr.TargetGameNpc);
         }
         catch (Exception ex)
         {

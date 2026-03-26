@@ -31,7 +31,9 @@ public class ContractManager
 
     // State
     public Contract? ActiveContract { get; private set; }
-    public Contract? PendingOffer { get; private set; }
+    public List<Contract> BountyBoard { get; private set; } = new();
+    private Dictionary<string, (NPC? s1api, GameNPC? game)> _boardTargetData = new();
+    private const int BoardSize = 3;
     public int CompletedCount { get; private set; }
     public float TotalEarnings { get; private set; }
 
@@ -64,10 +66,11 @@ public class ContractManager
     // Cooldowns are now read from HitmanConfig (see Settings section below)
 
     // Pending offer time remaining (exposed for UI)
-    public float PendingOfferTimeRemaining => PendingOffer != null ? Math.Max(0f, PendingOfferTimeout - _pendingOfferTimer) : 0f;
+    public bool HasBountyBoard => BountyBoard.Count > 0;
 
     // Exposed for dialogue patches / distract follow
     public NPC? TargetNpc => _targetNpc;
+    public GameNPC? TargetGameNpc => _targetGameNpc;
 
     // Internal — target is tracked as both S1API NPC (if available) and raw GameNPC (always)
     private NPC? _targetNpc;
@@ -75,7 +78,7 @@ public class ContractManager
     private NPC? _clientNpc;
     private float _offerTimer;
     private float _nextOfferDelay;
-    private float _pendingOfferTimer;
+    // _pendingOfferTimer removed — bounty board doesn't expire
     private string _lastTrackedRegion = "";
     private bool _initialIntelSent;
     private float _npcCheckTimer;
@@ -131,7 +134,7 @@ public class ContractManager
     // Settings — all values read from HitmanConfig (MelonPreferences)
     private float MinOfferInterval => HitmanConfig.OfferInterval_Min;
     private float MaxOfferInterval => HitmanConfig.OfferInterval_Max;
-    private float PendingOfferTimeout => HitmanConfig.OfferTimeout;
+    // PendingOfferTimeout removed — bounty board doesn't expire
     private const int MaxLevel = 10;
     private float KnockoutRewardMultiplier => HitmanConfig.KnockoutPayMultiplier;
 
@@ -242,7 +245,36 @@ public class ContractManager
         }
         catch { /* NPC.All iteration failed */ }
 
-        if (_targetNpc != null)
+        // Fallback: search GameNPCs if S1API didn't find the target
+        if (_targetNpc == null)
+        {
+            try
+            {
+                var allNpcs = UnityEngine.Object.FindObjectsOfType<GameNPC>();
+                if (allNpcs != null)
+                {
+                    foreach (var npc in allNpcs)
+                    {
+                        try
+                        {
+                            if (npc == null || npc.gameObject == null) continue;
+                            if (npc.Health.IsDead) continue;
+                            string name = npc.fullName ?? "";
+                            if (name == ActiveContract.TargetName)
+                            {
+                                _targetGameNpc = npc;
+                                Melon<HitmanModMain>.Logger.Msg($"Resolved target via GameNPC: {name}");
+                                break;
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        if (_targetNpc != null || _targetGameNpc != null)
         {
             _clientNpc = GetRandomClient(_targetNpc);
             _initialIntelSent = false;
@@ -251,11 +283,15 @@ public class ContractManager
             LastKnownLocation = "";
             TargetDistance = -1f;
 
-            try { NPCDefenseHandler.PrepareTarget(_targetNpc, ActiveContract.Difficulty); }
-            catch (Exception ex) { Melon<HitmanModMain>.Logger.Warning($"Failed to re-arm target: {ex.Message}"); }
-
-            try { DistractChoiceInjector.InjectChoice(_targetNpc); }
-            catch (Exception ex) { Melon<HitmanModMain>.Logger.Warning($"Failed to inject distract choice (resolve): {ex.Message}"); }
+            if (_targetNpc != null)
+            {
+                try { NPCDefenseHandler.PrepareTarget(_targetNpc, ActiveContract.Difficulty); } catch { }
+                try { DistractChoiceInjector.InjectChoice(_targetNpc); } catch { }
+            }
+            else if (_targetGameNpc != null)
+            {
+                try { DistractChoiceInjector.InjectChoiceFromGameNpc(_targetGameNpc); } catch { }
+            }
 
             Melon<HitmanModMain>.Logger.Msg($"Resolved active contract target: {ActiveContract.TargetName}");
         }
@@ -294,7 +330,7 @@ public class ContractManager
         }
 
         // Active contract check (throttled)
-        if (ActiveContract != null && _targetNpc != null)
+        if (ActiveContract != null && IsNpcValidAny)
         {
             _periodicIntelTimer += deltaTime;
 
@@ -351,13 +387,13 @@ public class ContractManager
                     return;
                 }
 
-                if (!IsNpcValid(_targetNpc))
+                if (!IsNpcValidAny)
                 {
                     FailContract("Lost track of the target. Contract failed.");
                     return;
                 }
 
-                NPCDefenseHandler.CheckAndArm(_targetNpc);
+                if (_targetNpc != null) NPCDefenseHandler.CheckAndArm(_targetNpc);
                 EnsureClientValid();
                 UpdateTracking();
             }
@@ -365,17 +401,6 @@ public class ContractManager
 
         // Distract follow update
         DistractFollow.Update(deltaTime);
-
-        // Pending offer timeout
-        if (PendingOffer != null)
-        {
-            _pendingOfferTimer += deltaTime;
-            if (_pendingOfferTimer >= PendingOfferTimeout)
-            {
-                Melon<HitmanModMain>.Logger.Msg("Pending offer expired.");
-                ExpirePendingOffer();
-            }
-        }
 
         // Cooldown countdown
         if (CooldownRemaining > 0f)
@@ -385,15 +410,15 @@ public class ContractManager
                 OnStateChanged?.Invoke();
         }
 
-        // Auto-offer new contracts (only if Hitman career is unlocked)
-        if (IsHitmanUnlocked && ActiveContract == null && PendingOffer == null && !IsOnCooldown)
+        // Auto-generate bounty board when empty
+        if (IsHitmanUnlocked && ActiveContract == null && BountyBoard.Count == 0 && !IsOnCooldown)
         {
             _offerTimer += deltaTime;
             if (_offerTimer >= _nextOfferDelay)
             {
                 _offerTimer = 0f;
                 _nextOfferDelay = RandomFloat(MinOfferInterval, MaxOfferInterval);
-                OfferNewContract();
+                GenerateBountyBoard();
             }
         }
     }
@@ -401,7 +426,8 @@ public class ContractManager
     /// <summary>
     /// Returns null on success, or an error message string on failure (for UI display).
     /// </summary>
-    public string? RequestContract()
+    /// <summary>Generate (or refresh) the bounty board.</summary>
+    public string? RequestBountyBoard()
     {
         LastRequestError = null;
 
@@ -410,11 +436,8 @@ public class ContractManager
             LastRequestError = "You already have an active contract.";
             return LastRequestError;
         }
-        if (PendingOffer != null)
-        {
-            LastRequestError = "You have a pending offer. Check the app.";
-            return LastRequestError;
-        }
+        if (BountyBoard.Count > 0)
+            return null; // board already populated
         if (IsOnCooldown)
         {
             int mins = (int)(CooldownRemaining / 60);
@@ -423,26 +446,102 @@ public class ContractManager
             return LastRequestError;
         }
 
-        int s1apiCount = NPC.All?.Count ?? 0;
-        int gameNpcCount = 0;
-        try { gameNpcCount = UnityEngine.Object.FindObjectsOfType<GameNPC>()?.Length ?? 0; } catch { }
-        Melon<HitmanModMain>.Logger.Msg($"RequestContract: S1API={s1apiCount}, GameNPC={gameNpcCount}");
+        GenerateBountyBoard();
 
-        if (s1apiCount == 0 && gameNpcCount == 0)
-        {
-            LastRequestError = "No NPCs available yet. Try again later.";
-            return LastRequestError;
-        }
-
-        OfferNewContract();
-
-        if (PendingOffer == null)
+        if (BountyBoard.Count == 0)
         {
             LastRequestError = "No valid targets available right now.";
             return LastRequestError;
         }
 
         return null;
+    }
+
+    /// <summary>Accept a specific contract from the bounty board by ID.</summary>
+    public void AcceptBoardContract(string contractId)
+    {
+        var contract = BountyBoard.Find(c => c.Id == contractId);
+        if (contract == null) return;
+
+        if (!_boardTargetData.TryGetValue(contractId, out var targetData))
+        {
+            Melon<HitmanModMain>.Logger.Warning($"[THM] No target data for contract {contractId}");
+            return;
+        }
+
+        // Set target references
+        _targetNpc = targetData.s1api;
+        _targetGameNpc = targetData.game;
+
+        // Validate target is still alive
+        if (IsTargetDead)
+        {
+            Melon<HitmanModMain>.Logger.Warning($"[THM] Target {contract.TargetName} is already dead. Removing from board.");
+            BountyBoard.Remove(contract);
+            _boardTargetData.Remove(contractId);
+            OnStateChanged?.Invoke();
+            return;
+        }
+
+        // Activate
+        ActiveContract = contract;
+        ActiveContract.Status = ContractStatus.Active;
+
+        // Clear board (other contracts discarded)
+        BountyBoard.Clear();
+        _boardTargetData.Clear();
+
+        // Save target relationship for restoration on abort
+        _savedTargetRelationship = null;
+        if (_targetNpc != null)
+        {
+            try { _savedTargetRelationship = _targetNpc.Relationship.Delta; } catch { }
+        }
+
+        // Prepare target defense + distract dialogue
+        if (_targetNpc != null)
+        {
+            try { NPCDefenseHandler.PrepareTarget(_targetNpc, ActiveContract.Difficulty); } catch { }
+            try { DistractChoiceInjector.InjectChoice(_targetNpc); } catch { }
+        }
+        else if (_targetGameNpc != null)
+        {
+            try { DistractChoiceInjector.InjectChoiceFromGameNpc(_targetGameNpc); } catch { }
+        }
+
+        _initialIntelSent = false;
+        _periodicIntelTimer = 0f;
+
+        // Send SMS confirmation
+        string typeDesc = ActiveContract.Type == ContractType.Kill
+            ? "I need them <b>eliminated permanently</b>"
+            : "I need them <b>knocked out</b> - don't kill them";
+        SendClientMessage(
+            $"Contract accepted.\n\n" +
+            $"Target: <b>{ActiveContract.TargetName}</b>\n" +
+            $"{typeDesc}.\n\n" +
+            $"Payment of <b>${ActiveContract.Reward:N0}</b> upon completion.");
+
+        OnStateChanged?.Invoke();
+        Melon<HitmanModMain>.Logger.Msg($"[THM] Board contract accepted: {ActiveContract.Type} {ActiveContract.TargetName} ({ActiveContract.Difficulty}) for ${ActiveContract.Reward}");
+    }
+
+    /// <summary>Refresh the board (discard current, generate new after short cooldown).</summary>
+    /// <summary>Clear the bounty board without cooldown (Back button).</summary>
+    public void ClearBountyBoard()
+    {
+        BountyBoard.Clear();
+        _boardTargetData.Clear();
+        OnStateChanged?.Invoke();
+    }
+
+    /// <summary>Refresh the board (discard current, short cooldown, new board auto-generates).</summary>
+    public void RefreshBountyBoard()
+    {
+        BountyBoard.Clear();
+        _boardTargetData.Clear();
+        CooldownRemaining = HitmanConfig.CooldownAfterDecline;
+        OnStateChanged?.Invoke();
     }
 
     public void AbortContract()
@@ -492,8 +591,6 @@ public class ContractManager
             try { if (!_clientNpc!.IsDead && !_clientNpc.IsKnockedOut) return; }
             catch { /* fall through to reassign */ }
         }
-        if (_targetNpc == null) return;
-
         var newClient = GetRandomClient(_targetNpc);
         if (newClient != null)
         {
@@ -572,8 +669,8 @@ public class ContractManager
 
     private void UpdateTracking()
     {
-        if (ActiveContract == null || _targetNpc == null) return;
-        if (!IsNpcValid(_targetNpc)) return;
+        if (ActiveContract == null) return;
+        if (!IsNpcValidAny) return;
 
         // Set initial region once
         if (!_initialIntelSent)
@@ -611,7 +708,7 @@ public class ContractManager
     /// <summary>Paid hack: enables live distance tracking for this contract.</summary>
     public string HackTargetLocation()
     {
-        if (ActiveContract == null || _targetNpc == null || !IsNpcValid(_targetNpc))
+        if (ActiveContract == null || !IsNpcValidAny)
             return "No active contract.";
 
         if (TrackingEnabled)
@@ -690,14 +787,17 @@ public class ContractManager
         try
         {
             var player = GamePlayer.Local;
-            if (player == null || _targetNpc == null) { TargetDistance = -1f; return; }
+            if (player == null || !IsNpcValidAny) { TargetDistance = -1f; return; }
 
             // NPCs inside buildings have their transform at world-origin (interior scenes at 0,0,0)
-            // — use IsInBuilding to detect and skip distance calculation in that case
-            if (_targetNpc.IsInBuilding) { TargetDistance = -2f; return; } // -2 = "inside building"
+            try
+            {
+                if (_targetNpc != null && _targetNpc.IsInBuilding) { TargetDistance = -2f; return; }
+            }
+            catch { }
 
             var playerPos = player.transform.position;
-            var targetPos = _targetNpc.gameObject.transform.position;
+            var targetPos = TargetPosition;
 
             // Sanity check: discard if position is at/near world origin (unloaded NPC)
             if (targetPos.sqrMagnitude < 1f) { TargetDistance = -1f; return; }
@@ -755,217 +855,136 @@ public class ContractManager
 
     private static readonly Dictionary<int, string> _regionIntCache = new();
 
-    private string GetRegionName(NPC npc)
+    private string GetRegionName(NPC? npc)
     {
-        try
+        // Try S1API NPC region first
+        if (npc != null)
         {
-            // Prefer npc.Region — it's the game's own region assignment, reliable for
-            // both outdoor and indoor NPCs. Position-based lookup fails for NPCs inside
-            // buildings (interior scenes placed at world-origin return wrong region).
-            int regionInt = (int)npc.Region;
-            if (_regionIntCache.TryGetValue(regionInt, out string? cached))
-                return cached;
+            try
+            {
+                int regionInt = (int)npc.Region;
+                if (_regionIntCache.TryGetValue(regionInt, out string? cached))
+                    return cached;
 
-            string raw = npc.Region.ToString();
-            string friendly = RegionNameMap.TryGetValue(raw, out string? mapped) ? mapped : raw;
-            _regionIntCache[regionInt] = friendly;
-            return friendly;
+                string raw = npc.Region.ToString();
+                string friendly = RegionNameMap.TryGetValue(raw, out string? mapped) ? mapped : raw;
+                _regionIntCache[regionInt] = friendly;
+                return friendly;
+            }
+            catch { }
         }
-        catch
+
+        // Fallback: try to get region from GameNPC
+        if (_targetGameNpc != null)
         {
-            return string.IsNullOrEmpty(_lastTrackedRegion) ? "an unknown area" : _lastTrackedRegion;
+            // GameNPC has a direct .Region property (discovered via reflection dump)
+            try
+            {
+                var regionVal = _targetGameNpc.Region;
+                string raw = regionVal.ToString();
+                string friendly = RegionNameMap.TryGetValue(raw, out string? mapped) ? mapped : raw;
+                if (!string.IsNullOrEmpty(friendly))
+                    return friendly;
+            }
+            catch { }
         }
+
+        return string.IsNullOrEmpty(_lastTrackedRegion) ? "an unknown area" : _lastTrackedRegion;
     }
 
     // ===================== CONTRACT LIFECYCLE =====================
 
-    private void OfferNewContract()
+    private void GenerateBountyBoard()
     {
-        // Try S1API NPCs first, fall back to Il2Cpp GameNPCs
-        var targets = GetValidTargets();
-        string targetName;
-        string targetDesc = "";
+        BountyBoard.Clear();
+        _boardTargetData.Clear();
 
-        if (targets.Count > 0)
+        // Collect valid targets
+        var s1apiTargets = GetValidTargets();
+        var gameTargets = s1apiTargets.Count == 0 ? GetValidGameTargets() : new List<GameNPC>();
+
+        int poolSize = s1apiTargets.Count + gameTargets.Count;
+        if (poolSize == 0)
         {
-            var target = targets[Rng.Next(targets.Count)];
-            _targetNpc = target;
-            _targetGameNpc = target.gameObject?.GetComponent<GameNPC>();
-            targetName = target.FullName;
-            try { targetDesc = TargetDescription.Generate(target); } catch { }
+            Melon<HitmanModMain>.Logger.Warning("[THM] No valid targets for bounty board.");
+            return;
         }
-        else
+
+        int count = Math.Min(BoardSize, poolSize);
+        var usedIndices = new HashSet<int>();
+
+        for (int i = 0; i < count; i++)
         {
-            // Fallback: use Il2Cpp GameNPCs directly
-            var gameTargets = GetValidGameTargets();
-            if (gameTargets.Count == 0)
+            // Pick unique random target
+            int idx;
+            int attempts = 0;
+            do { idx = Rng.Next(poolSize); attempts++; }
+            while (usedIndices.Contains(idx) && attempts < 50);
+            if (usedIndices.Contains(idx)) continue;
+            usedIndices.Add(idx);
+
+            NPC? s1apiNpc = null;
+            GameNPC? gameNpc = null;
+            string targetName = "?";
+            string targetDesc = "";
+
+            if (idx < s1apiTargets.Count)
             {
-                Melon<HitmanModMain>.Logger.Warning("No valid targets (S1API or GameNPC).");
-                return;
+                s1apiNpc = s1apiTargets[idx];
+                gameNpc = s1apiNpc.gameObject?.GetComponent<GameNPC>();
+                targetName = s1apiNpc.FullName;
+                try { targetDesc = TargetDescription.Generate(s1apiNpc); } catch { }
+            }
+            else
+            {
+                gameNpc = gameTargets[idx - s1apiTargets.Count];
+                try { targetName = gameNpc.fullName; } catch { }
+                try { targetDesc = TargetDescription.GenerateFromGameNpc(gameNpc); } catch { }
             }
 
-            var gameTarget = gameTargets[Rng.Next(gameTargets.Count)];
-            _targetNpc = null;
-            _targetGameNpc = gameTarget;
-            targetName = "?";
-            try { targetName = gameTarget.fullName; } catch { }
-            try { targetDesc = TargetDescription.GenerateFromGameNpc(gameTarget); } catch { }
-        }
+            var difficulty = PickWeightedDifficulty();
+            var type = Rng.Next(2) == 0 ? ContractType.Kill : ContractType.Knockout;
+            var reward = CalculateReward(difficulty, type);
 
-        var client = GetRandomClient(_targetNpc);
-        // If no S1API client, use MysteriousMan as fallback messenger
-        _clientNpc = client;
-
-        var difficulty = PickWeightedDifficulty();
-        var type = Rng.Next(2) == 0 ? ContractType.Kill : ContractType.Knockout;
-        var reward = CalculateReward(difficulty, type);
-
-        var contract = new Contract
-        {
-            Id = Guid.NewGuid().ToString("N")[..8],
-            TargetName = targetName,
-            TargetDescription = targetDesc,
-            Type = type,
-            Difficulty = difficulty,
-            Reward = reward,
-            Status = ContractStatus.Offered
-        };
-
-        PendingOffer = contract;
-        _pendingOfferTimer = 0f;
-
-        string typeDesc = type == ContractType.Kill
-            ? "I need them <b>eliminated permanently</b>"
-            : "I need them <b>knocked out</b> - don't kill them";
-
-        string message = $"I have a job for you.\n\n" +
-                         $"{typeDesc}.\n\n" +
-                         $"Difficulty: <b>{contract.DifficultyLabel}</b>\n" +
-                         $"Reward: <b>${reward:N0}</b>" +
-                         $"\n\nOpen the <b>Hitman</b> app to accept or decline.";
-
-        try { SendClientMessage(message); }
-        catch (Exception ex)
-        {
-            Melon<HitmanModMain>.Logger.Warning($"Failed to send contract offer message: {ex.Message}");
-            PendingOffer = null;
-            _targetNpc = null;
-            _clientNpc = null;
-            return;
-        }
-        OnStateChanged?.Invoke();
-        Melon<HitmanModMain>.Logger.Msg($"Contract offered: {type} {targetName} ({difficulty}) for ${reward}");
-    }
-
-    private void OnContractAccepted()
-    {
-        if (PendingOffer == null) return;
-        if (_targetNpc == null || !IsNpcValid(_targetNpc))
-        {
-            Melon<HitmanModMain>.Logger.Warning("OnContractAccepted: target NPC no longer valid.");
-            SendClientMessage("Lost contact with the target. Deal's off.");
-            ClearPendingState();
-            CooldownRemaining = CooldownAfterDecline;
-            OnStateChanged?.Invoke();
-            return;
-        }
-
-        try
-        {
-            if (_targetNpc.IsDead || _targetNpc.IsKnockedOut)
+            var contract = new Contract
             {
-                SendClientMessage("Bad news - the target is already down. Deal's off.");
-                ClearPendingState();
-                CooldownRemaining = CooldownAfterDecline;
-                OnStateChanged?.Invoke();
-                return;
+                Id = Guid.NewGuid().ToString("N")[..8],
+                TargetName = targetName,
+                TargetDescription = targetDesc,
+                Type = type,
+                Difficulty = difficulty,
+                Reward = reward,
+                Status = ContractStatus.Offered
+            };
+
+            BountyBoard.Add(contract);
+            _boardTargetData[contract.Id] = (s1apiNpc, gameNpc);
+        }
+
+        // Send one SMS notification
+        if (BountyBoard.Count > 0)
+        {
+            try
+            {
+                SendClientMessage(
+                    $"I've got <b>{BountyBoard.Count} new contracts</b> for you.\n\n" +
+                    $"Open the <b>Hitman</b> app to browse and pick one.");
             }
+            catch { }
         }
-        catch
-        {
-            SendClientMessage("Lost contact with the target. Deal's off.");
-            ClearPendingState();
-            CooldownRemaining = CooldownAfterDecline;
-            OnStateChanged?.Invoke();
-            return;
-        }
-
-        ActiveContract = PendingOffer;
-        ActiveContract.Status = ContractStatus.Active;
-        PendingOffer = null;
-        _pendingOfferTimer = 0f;
-        _initialIntelSent = false;
-        _lastTrackedRegion = "";
-        _periodicIntelTimer = 0f;
-        LastKnownLocation = "";
-        TargetDistance = -1f;
-
-        // Save target's relationship so we can restore it after the kill
-        _savedTargetRelationship = null;
-        try { _savedTargetRelationship = _targetNpc.Relationship.Delta; }
-        catch { /* NPC may not have relationship data */ }
-
-        try { NPCDefenseHandler.PrepareTarget(_targetNpc, ActiveContract.Difficulty); }
-        catch (Exception ex)
-        {
-            Melon<HitmanModMain>.Logger.Warning($"Failed to arm target: {ex.Message}");
-        }
-
-        try { DistractChoiceInjector.InjectChoice(_targetNpc!); }
-        catch (Exception ex) { Melon<HitmanModMain>.Logger.Warning($"Failed to inject distract choice: {ex.Message}"); }
-
-        string warning = ActiveContract.Difficulty >= ContractDifficulty.Hard
-            ? " <b>Be careful - the target may be armed.</b>"
-            : "";
-
-        string koWarning = ActiveContract.Type == ContractType.Knockout
-            ? "\n<b>DO NOT KILL the target!</b>"
-            : "";
-
-        string region = GetRegionName(_targetNpc);
-
-        SendClientMessage(
-            $"Good. {ActiveContract.TypeLabel} them.{warning}{koWarning}\n\n" +
-            $"Last seen in <b>{region}</b>.\n\n" +
-            $"Payment of <b>${ActiveContract.Reward:N0}</b> upon completion.\n\n" +
-            $"Check the app for target description."
-        );
 
         OnStateChanged?.Invoke();
-        Melon<HitmanModMain>.Logger.Msg($"Contract activated: {ActiveContract.TypeLabel} {_targetNpc.FullName}");
+        Melon<HitmanModMain>.Logger.Msg($"[THM] Bounty board generated: {BountyBoard.Count} contracts.");
     }
 
-    public void AcceptPendingOffer() => OnContractAccepted();
-    public void DeclinePendingOffer() => OnContractDeclined();
-
-    private void OnContractDeclined()
-    {
-        if (PendingOffer == null) return;
-        SendClientMessage("Not interested.");
-        ClearPendingState();
-        CooldownRemaining = CooldownAfterDecline;
-        OnStateChanged?.Invoke();
-        Melon<HitmanModMain>.Logger.Msg("Contract declined by player.");
-    }
-
-    private void ExpirePendingOffer()
-    {
-        if (IsNpcValid(_clientNpc))
-        {
-            try { _clientNpc!.SendTextMessage("You took too long. Offer withdrawn."); }
-            catch { /* Client NPC destroyed */ }
-        }
-        ClearPendingState();
-        CooldownRemaining = CooldownAfterExpire;
-        OnStateChanged?.Invoke();
-    }
-
+    // OnContractAccepted logic is now in AcceptBoardContract()
     private void ClearPendingState()
     {
-        PendingOffer = null;
+        BountyBoard.Clear();
+        _boardTargetData.Clear();
         _targetNpc = null;
+        _targetGameNpc = null;
         _clientNpc = null;
-        _pendingOfferTimer = 0f;
         _offerTimer = 0f;
     }
 
@@ -1194,8 +1213,9 @@ public class ContractManager
         DistractChoiceInjector.RemoveChoice();
         ActiveContract = null;
         _targetNpc = null;
+        _targetGameNpc = null;
         _clientNpc = null;
-        _pendingOfferTimer = 0f;
+        // bounty board cleared via ClearPendingState or explicitly
         _offerTimer = 0f;
         _npcCheckTimer = 0f;
         _lastTrackedRegion = "";
@@ -1243,7 +1263,7 @@ public class ContractManager
     {
         _saveEnabled = false;
 
-        if (ActiveContract != null || PendingOffer != null)
+        if (ActiveContract != null || BountyBoard.Count > 0)
             CooldownRemaining = CooldownAfterFail;
 
         if (ActiveContract != null && IsNpcValid(_targetNpc))
@@ -1256,10 +1276,11 @@ public class ContractManager
         _reusableTargets.Clear();
         _reusableClients.Clear();
         ActiveContract = null;
-        PendingOffer = null;
+        BountyBoard.Clear();
+        _boardTargetData.Clear();
         _targetNpc = null;
+        _targetGameNpc = null;
         _clientNpc = null;
-        _pendingOfferTimer = 0f;
         _offerTimer = 0f;
         _npcCheckTimer = 0f;
         _periodicIntelTimer = 0f;
@@ -1345,6 +1366,7 @@ public class ContractManager
     // ===================== HELPERS =====================
 
     private static readonly Dictionary<System.Type, bool> _typeIsExcluded = new();
+    private static bool _gameNpcPropsLogged;
 
     private static readonly HashSet<string> _excludedTypeNames = new()
     {
@@ -1561,13 +1583,11 @@ public class ContractManager
                     }
                     catch { }
 
-                    // Exclude by name patterns
+                    // Exclude by name (same lists as S1API path)
                     string name = "";
                     try { name = npc.fullName ?? ""; } catch { }
                     if (string.IsNullOrEmpty(name)) continue;
-                    if (name.Contains("Mysterious") || name.Contains("Goon") ||
-                        name.Contains("Guard") || name.Contains("Officer"))
-                    { skipped++; continue; }
+                    if (IsExcludedByName(name)) { skipped++; continue; }
 
                     _reusableGameTargets.Add(npc);
                 }

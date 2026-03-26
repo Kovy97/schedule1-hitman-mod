@@ -4,12 +4,14 @@ using MelonLoader;
 using S1API.Entities;
 using UnityEngine;
 using GamePlayer = Il2CppScheduleOne.PlayerScripts.Player;
+using GameNPC = Il2CppScheduleOne.NPCs.NPC;
 
 namespace HitmanMod;
 
 /// <summary>
 /// Handles the "Distract" mechanic: makes the contract target follow the player
 /// for up to 15 seconds, then shows worldspace text and returns them to where they started.
+/// Works with both S1API NPC and Il2Cpp GameNPC.
 /// </summary>
 public static class DistractFollow
 {
@@ -17,38 +19,59 @@ public static class DistractFollow
     public const string ChoiceText = "Help! Please follow me quick! (Distract)";
 
     private const float FollowTimeout       = 15f;
-    private const float UpdateInterval      = 0.25f;  // check interval
-    private const float MoveThresholdSq     = 2.25f;  // 1.5m² — only re-route when player moved this far
+    private const float UpdateInterval      = 0.25f;
+    private const float MoveThresholdSq     = 2.25f;
 
     private static NPC? _target;
+    private static GameNPC? _targetGame;
     private static float _timeout;
     private static float _updateTimer;
     private static Vector3 _originPosition;
     private static Vector3 _lastDestination;
     private static bool _hasOrigin;
 
-    public static bool IsActive => _target != null;
+    public static bool IsActive => _target != null || _targetGame != null;
 
     public static void StartFollowing(NPC npc)
     {
         _target = npc;
+        _targetGame = npc.gameObject?.GetComponent<GameNPC>();
+        StartFollowingInternal(npc.gameObject.transform.position, npc.IsInBuilding);
+    }
+
+    public static void StartFollowingGameNpc(GameNPC gameNpc)
+    {
+        _target = null;
+        _targetGame = gameNpc;
+        bool inBuilding = false;
+        try { inBuilding = gameNpc.transform.position.sqrMagnitude < 1f; } catch { }
+        StartFollowingInternal(gameNpc.transform.position, inBuilding);
+    }
+
+    private static void StartFollowingInternal(Vector3 npcPos, bool inBuilding)
+    {
         _timeout = FollowTimeout;
         _updateTimer = 0f;
         _lastDestination = Vector3.zero;
-
         _hasOrigin = false;
+
         try
         {
-            // Only save origin if NPC is outdoors with a valid world position.
-            // Interior scenes sit at world-origin — positions near (0,0,0) are unreliable.
-            if (!npc.IsInBuilding)
+            if (!inBuilding && npcPos.sqrMagnitude > 1f)
             {
-                var pos = npc.gameObject.transform.position;
-                if (pos.sqrMagnitude > 1f) // sanity check: not at/near world origin
-                {
-                    _originPosition = pos;
-                    _hasOrigin = true;
-                }
+                _originPosition = npcPos;
+                _hasOrigin = true;
+            }
+        }
+        catch { }
+
+        // Disable the NPC's AI behaviour so it doesn't override our movement
+        try
+        {
+            if (_targetGame?.Behaviour != null)
+            {
+                _targetGame.Behaviour.enabled = false;
+                Melon<HitmanModMain>.Logger.Msg("[THM] Distract: NPC behaviour disabled.");
             }
         }
         catch { }
@@ -59,10 +82,20 @@ public static class DistractFollow
     public static void StopFollowing()
     {
         if (_target != null)
-        {
             try { _target.Movement.Stop(); } catch { }
-            _target = null;
+        else if (_targetGame?.Movement != null)
+            try { _targetGame.Movement.Stop(); } catch { }
+
+        // Re-enable NPC AI behaviour
+        try
+        {
+            if (_targetGame?.Behaviour != null)
+                _targetGame.Behaviour.enabled = true;
         }
+        catch { }
+
+        _target = null;
+        _targetGame = null;
         _timeout = 0f;
         _updateTimer = 0f;
         _hasOrigin = false;
@@ -71,20 +104,25 @@ public static class DistractFollow
 
     public static void Update(float dt)
     {
-        if (_target == null) return;
+        if (_target == null && _targetGame == null) return;
 
         // Auto-cancel on death or KO
         try
         {
-            if (_target.IsDead || _target.IsKnockedOut)
+            bool dead = false;
+            if (_target != null) dead = _target.IsDead || _target.IsKnockedOut;
+            else if (_targetGame != null) dead = _targetGame.Health.IsDead;
+            if (dead)
             {
                 _target = null;
+                _targetGame = null;
                 return;
             }
         }
         catch
         {
             _target = null;
+            _targetGame = null;
             return;
         }
 
@@ -106,11 +144,12 @@ public static class DistractFollow
 
             var playerPos = player.transform.position;
 
-            // Only re-route when the player has moved far enough from the last destination.
-            // This prevents continuous pathfinding resets that cause jittery movement.
             if (Vector3.SqrMagnitude(playerPos - _lastDestination) >= MoveThresholdSq)
             {
-                _target.Movement.SetDestination(playerPos);
+                if (_target != null)
+                    _target.Movement.SetDestination(playerPos);
+                else if (_targetGame?.Movement != null)
+                    _targetGame.Movement.SetDestination(playerPos);
                 _lastDestination = playerPos;
             }
         }
@@ -123,42 +162,61 @@ public static class DistractFollow
 
     private static void OnFollowTimeout()
     {
-        if (_target == null) return;
+        if (_target == null && _targetGame == null) return;
 
-        var npc = _target;
+        var gameNpc = _targetGame;
         var origin = _originPosition;
         var hasOrigin = _hasOrigin;
 
-        _target = null;
-        _timeout = 0f;
-        _updateTimer = 0f;
-        _hasOrigin = false;
+        // Re-enable NPC AI behaviour FIRST so death animations etc. work
+        try
+        {
+            if (gameNpc?.Behaviour != null)
+                gameNpc.Behaviour.enabled = true;
+        }
+        catch { }
 
         // Show worldspace text above NPC's head
         try
         {
-            var handler = npc.gameObject.GetComponent<DialogueHandler>();
-            if (handler == null)
-                handler = npc.gameObject.GetComponentInChildren<DialogueHandler>();
-            handler?.ShowWorldspaceDialogue("Ok, I'm leavin'..", 4f);
+            var go = _target?.gameObject ?? gameNpc?.gameObject;
+            if (go != null)
+            {
+                var handler = go.GetComponent<DialogueHandler>() ?? go.GetComponentInChildren<DialogueHandler>();
+                handler?.ShowWorldspaceDialogue("Ok, I'm leavin'..", 4f);
+            }
         }
         catch (Exception ex)
         {
             Melon<HitmanModMain>.Logger.Warning($"[THM] Distract worldspace text failed: {ex.Message}");
         }
 
-        // Return NPC to original position
+        // Return NPC to original position or re-enable schedule
         try
         {
             if (hasOrigin)
-                npc.Movement.SetDestination(origin);
+            {
+                if (_target != null)
+                    _target.Movement.SetDestination(origin);
+                else if (gameNpc?.Movement != null)
+                    gameNpc.Movement.SetDestination(origin);
+            }
             else
-                npc.Movement.Stop();
+            {
+                if (_target != null) _target.Movement.Stop();
+                else if (gameNpc?.Movement != null) gameNpc.Movement.Stop();
+            }
         }
         catch (Exception ex)
         {
             Melon<HitmanModMain>.Logger.Warning($"[THM] Distract return-to-origin failed: {ex.Message}");
         }
+
+        _target = null;
+        _targetGame = null;
+        _timeout = 0f;
+        _updateTimer = 0f;
+        _hasOrigin = false;
 
         Melon<HitmanModMain>.Logger.Msg("[THM] Distract timeout — NPC returning to start position.");
     }

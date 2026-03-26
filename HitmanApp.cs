@@ -95,8 +95,8 @@ public class HitmanApp : PhoneApp
 
         if (mgr.ActiveContract != null)
             ShowActiveContract(mgr);
-        else if (mgr.PendingOffer != null)
-            ShowPendingOffer(mgr);
+        else if (mgr.HasBountyBoard)
+            ShowBountyBoard(mgr);
         else
             ShowDashboard(mgr);
     }
@@ -124,14 +124,7 @@ public class HitmanApp : PhoneApp
             _cooldownText.text = $"<color=#E6A040>Next contract available in {mins}m {secs:D2}s</color>";
         }
 
-        if (_pendingTimerText != null && mgr.PendingOffer != null)
-        {
-            float remaining = mgr.PendingOfferTimeRemaining;
-            int mins = (int)(remaining / 60);
-            int secs = (int)(remaining % 60);
-            string color = remaining < 60f ? "E64050" : "E6A040";
-            _pendingTimerText.text = $"<color=#{color}>Offer expires in {mins}m {secs:D2}s</color>";
-        }
+        // Bounty board has no expiry timer
 
         // Live distance update
         if (mgr.ActiveContract != null)
@@ -243,22 +236,22 @@ public class HitmanApp : PhoneApp
                 PlaceText("Status", "<color=#AAAAAA>Waiting for contract...</color>", root, 16, FontStyle.Italic, TextAnchor.MiddleCenter, 0.05f, 0.44f, 0.95f, 0.52f);
             }
 
-            // Request button
+            // Browse Contracts button
             var btnPanel = MakeButtonPanel("ReqBtn", root.transform, AccentRed);
             AnchorRect(btnPanel, 0.15f, 0.30f, 0.85f, 0.40f);
-            PlaceText("ReqTxt", "REQUEST CONTRACT", btnPanel, 18, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
+            PlaceText("ReqTxt", "BROWSE CONTRACTS", btnPanel, 18, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
 
             var btn = btnPanel.AddComponent<Button>();
             ConfigureButtonFeedback(btn, AccentRed);
             btn.onClick.AddListener((UnityAction)(() =>
             {
-                mgr.RequestContract();
+                mgr.RequestBountyBoard();
                 RefreshUI();
             }));
         }
 
         // Tip
-        PlaceText("Tip", "Contracts are also sent automatically via SMS", root, 12, FontStyle.Italic, TextAnchor.MiddleCenter, 0, 0.22f, 1, 0.28f);
+        PlaceText("Tip", "New contracts appear on the board automatically", root, 12, FontStyle.Italic, TextAnchor.MiddleCenter, 0, 0.22f, 1, 0.28f);
 
         // Reset Progress button
         var resetPanel = MakeButtonPanel("ResetBtn", root.transform, new Color(0.3f, 0.15f, 0.15f));
@@ -291,81 +284,89 @@ public class HitmanApp : PhoneApp
         }));
     }
 
-    // ===================== PENDING OFFER =====================
-    private void ShowPendingOffer(ContractManager mgr)
+    // ===================== BOUNTY BOARD =====================
+    private void ShowBountyBoard(ContractManager mgr)
     {
-        var offer = mgr.PendingOffer;
-        if (offer == null) return;
-
         var root = MakePanel("Root", _container!.transform, BgDark);
         StretchFull(root);
 
         // Header
         var header = MakePanel("Header", root.transform, BgHeader);
-        AnchorRect(header, 0, 0.90f, 1, 1);
-        PlaceText("Title", "NEW CONTRACT OFFER", header, 24, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
+        AnchorRect(header, 0, 0.92f, 1, 1);
+        PlaceText("Title", "BOUNTY BOARD", header, 22, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
 
-        // Expiry timer
-        float remaining = mgr.PendingOfferTimeRemaining;
-        int mins = (int)(remaining / 60);
-        int secs = (int)(remaining % 60);
-        string timerColor = remaining < 60f ? "E64050" : "E6A040";
-        _pendingTimerText = PlaceText("Timer", $"<color=#{timerColor}>Offer expires in {mins}m {secs:D2}s</color>", root, 13, FontStyle.Italic, TextAnchor.MiddleCenter, 0, 0.86f, 1, 0.90f);
+        PlaceText("Sub", "<color=#AAAAAA>Select a contract</color>", root, 13, FontStyle.Italic, TextAnchor.MiddleCenter, 0, 0.88f, 1, 0.92f);
 
-        // Offer card
-        var card = MakePanel("Card", root.transform, BgCard);
-        AnchorRect(card, 0.05f, 0.38f, 0.95f, 0.85f);
+        // Contract cards — evenly spaced
+        var board = mgr.BountyBoard;
+        float cardHeight = 0.27f;
+        float gap = 0.01f;
+        float startY = 0.87f;
 
-        // Target
-        PlaceText("TgtLabel", "TARGET", card, 12, FontStyle.Normal, TextAnchor.MiddleLeft, 0.08f, 0.84f, 0.5f, 0.97f);
-        PlaceText("TgtName", offer.TargetName, card, 22, FontStyle.Bold, TextAnchor.MiddleLeft, 0.08f, 0.72f, 0.92f, 0.85f);
-
-        var div1 = MakePanel("Div1", card.transform, Divider);
-        AnchorRect(div1, 0.08f, 0.71f, 0.92f, 0.715f);
-
-        // Objective
-        PlaceText("ObjLabel", "OBJECTIVE", card, 12, FontStyle.Normal, TextAnchor.MiddleLeft, 0.08f, 0.56f, 0.5f, 0.70f);
-        string objColor = offer.Type == ContractType.Kill ? "E64050" : "E6A040";
-        PlaceText("ObjVal", $"<color=#{objColor}>{offer.TypeLabel}</color>", card, 18, FontStyle.Bold, TextAnchor.MiddleRight, 0.5f, 0.56f, 0.92f, 0.70f);
-
-        // Difficulty
-        PlaceText("DifLabel", "DIFFICULTY", card, 12, FontStyle.Normal, TextAnchor.MiddleLeft, 0.08f, 0.41f, 0.5f, 0.55f);
-        string difColor = GetDifficultyColor(offer.Difficulty);
-        PlaceText("DifVal", $"<color=#{difColor}>{offer.DifficultyLabel}</color>", card, 18, FontStyle.Bold, TextAnchor.MiddleRight, 0.5f, 0.41f, 0.92f, 0.55f);
-
-        var div2 = MakePanel("Div2", card.transform, Divider);
-        AnchorRect(div2, 0.08f, 0.40f, 0.92f, 0.405f);
-
-        // Reward
-        PlaceText("RewLabel", "REWARD", card, 12, FontStyle.Normal, TextAnchor.MiddleLeft, 0.08f, 0.22f, 0.5f, 0.39f);
-        PlaceText("RewVal", $"<color=#00C878>${offer.Reward:N0}</color>", card, 24, FontStyle.Bold, TextAnchor.MiddleRight, 0.5f, 0.22f, 0.92f, 0.39f);
-
-        // Warnings
-        if (offer.Difficulty >= ContractDifficulty.Hard)
+        for (int i = 0; i < board.Count && i < 3; i++)
         {
-            PlaceText("Warn", "<color=#E64050>WARNING: Target may be armed!</color>", card, 13, FontStyle.Bold, TextAnchor.MiddleCenter, 0.05f, 0.08f, 0.95f, 0.20f);
-        }
-        if (offer.Type == ContractType.Knockout)
-        {
-            float warnY = offer.Difficulty >= ContractDifficulty.Hard ? 0.01f : 0.08f;
-            PlaceText("KOWarn", "<color=#E6A040>Target must survive - DO NOT KILL!</color>", card, 12, FontStyle.Bold, TextAnchor.MiddleCenter, 0.05f, warnY, 0.95f, warnY + 0.10f);
+            float yMax = startY - i * (cardHeight + gap);
+            float yMin = yMax - cardHeight;
+            ShowBoardCard(board[i], root, yMin, yMax, mgr);
         }
 
-        // Accept button
-        var acceptPanel = MakeButtonPanel("AcceptBtn", root.transform, AcceptGreen);
-        AnchorRect(acceptPanel, 0.08f, 0.24f, 0.48f, 0.35f);
-        PlaceText("AcceptTxt", "ACCEPT", acceptPanel, 18, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
-        var acceptBtn = acceptPanel.AddComponent<Button>();
-        ConfigureButtonFeedback(acceptBtn, AcceptGreen);
-        acceptBtn.onClick.AddListener((UnityAction)(() => { mgr.AcceptPendingOffer(); }));
+        // Back button (bottom left)
+        var backPanel = MakeButtonPanel("BackBtn", root.transform, new Color(0.25f, 0.25f, 0.35f));
+        AnchorRect(backPanel, 0.04f, 0.01f, 0.35f, 0.08f);
+        PlaceText("BackTxt", "< BACK", backPanel, 13, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
+        var backBtn = backPanel.AddComponent<Button>();
+        ConfigureButtonFeedback(backBtn, new Color(0.25f, 0.25f, 0.35f));
+        backBtn.onClick.AddListener((UnityAction)(() =>
+        {
+            mgr.ClearBountyBoard();
+            RefreshUI();
+        }));
 
-        // Decline button
-        var declinePanel = MakeButtonPanel("DeclineBtn", root.transform, AbortRed);
-        AnchorRect(declinePanel, 0.52f, 0.24f, 0.92f, 0.35f);
-        PlaceText("DeclineTxt", "DECLINE", declinePanel, 18, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
-        var declineBtn = declinePanel.AddComponent<Button>();
-        ConfigureButtonFeedback(declineBtn, AbortRed);
-        declineBtn.onClick.AddListener((UnityAction)(() => { mgr.DeclinePendingOffer(); }));
+        // Refresh button (bottom right)
+        var refreshPanel = MakeButtonPanel("RefreshBtn", root.transform, new Color(0.25f, 0.25f, 0.35f));
+        AnchorRect(refreshPanel, 0.40f, 0.01f, 0.96f, 0.08f);
+        PlaceText("RefreshTxt", "REFRESH", refreshPanel, 13, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
+        var refreshBtn = refreshPanel.AddComponent<Button>();
+        ConfigureButtonFeedback(refreshBtn, new Color(0.25f, 0.25f, 0.35f));
+        refreshBtn.onClick.AddListener((UnityAction)(() =>
+        {
+            mgr.RefreshBountyBoard();
+            RefreshUI();
+        }));
+    }
+
+    private void ShowBoardCard(Contract contract, GameObject parent, float yMin, float yMax, ContractManager mgr)
+    {
+        var card = MakePanel($"Card_{contract.Id}", parent.transform, BgCard);
+        AnchorRect(card, 0.04f, yMin, 0.96f, yMax);
+
+        // Row 1: Target name + Type
+        PlaceText("Name", contract.TargetName, card, 15, FontStyle.Bold, TextAnchor.MiddleLeft, 0.06f, 0.62f, 0.58f, 0.95f);
+        string typeColor = contract.Type == ContractType.Kill ? "E64050" : "E6A040";
+        PlaceText("Type", $"<color=#{typeColor}>{contract.TypeLabel}</color>", card, 13, FontStyle.Bold, TextAnchor.MiddleRight, 0.58f, 0.62f, 0.94f, 0.95f);
+
+        // Divider
+        var div = MakePanel("Div", card.transform, Divider);
+        AnchorRect(div, 0.06f, 0.60f, 0.94f, 0.61f);
+
+        // Row 2: Difficulty + Reward
+        string difColor = GetDifficultyColor(contract.Difficulty);
+        PlaceText("Diff", $"<color=#{difColor}>{contract.DifficultyLabel}</color>", card, 13, FontStyle.Normal, TextAnchor.MiddleLeft, 0.06f, 0.35f, 0.48f, 0.59f);
+        PlaceText("Reward", $"<color=#00C878>${contract.Reward:N0}</color>", card, 16, FontStyle.Bold, TextAnchor.MiddleRight, 0.48f, 0.35f, 0.94f, 0.59f);
+
+        // SELECT button
+        var btnPanel = MakeButtonPanel($"Btn_{contract.Id}", card.transform, AcceptGreen);
+        AnchorRect(btnPanel, 0.06f, 0.05f, 0.94f, 0.32f);
+        PlaceText("BtnTxt", "SELECT", btnPanel, 14, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
+
+        var btn = btnPanel.AddComponent<Button>();
+        ConfigureButtonFeedback(btn, AcceptGreen);
+        string id = contract.Id;
+        btn.onClick.AddListener((UnityAction)(() =>
+        {
+            mgr.AcceptBoardContract(id);
+            RefreshUI();
+        }));
     }
 
     // ===================== ACTIVE CONTRACT =====================

@@ -282,6 +282,17 @@ public static class StrangleHandler
 
     private static void TryKillTarget()
     {
+        // Re-enable NPC behaviour so death animation plays
+        try
+        {
+            if (_pendingGameNpc?.Behaviour != null)
+                _pendingGameNpc.Behaviour.enabled = true;
+        }
+        catch { }
+
+        // Stop distract follow if active
+        DistractFollow.StopFollowing();
+
         // Try S1API Kill first, then direct health damage
         if (_pendingTarget != null)
         {

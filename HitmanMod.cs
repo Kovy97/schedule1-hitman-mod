@@ -3,7 +3,7 @@ using MelonLoader;
 using S1API.Entities;
 using GameNPC = Il2CppScheduleOne.NPCs.NPC;
 
-[assembly: MelonInfo(typeof(HitmanMod.HitmanModMain), "T.H.M - The Hitman Mod", "3.0.2", "Kowyx")]
+[assembly: MelonInfo(typeof(HitmanMod.HitmanModMain), "T.H.M - The Hitman Mod", "4.0.0", "Kowyx")]
 [assembly: MelonGame("TVGS", "Schedule I")]
 
 namespace HitmanMod;

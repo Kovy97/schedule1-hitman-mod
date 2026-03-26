@@ -59,19 +59,22 @@ public static class CableVisual
 
         try
         {
+            // Parent to camera if not already (eliminates jitter from manual repositioning)
             var cam = Camera.main;
             if (cam == null) return;
-            var camT = cam.transform;
 
+            if (_instance.transform.parent != cam.transform)
+            {
+                _instance.transform.SetParent(cam.transform, false);
+                Melon<HitmanModMain>.Logger.Msg("[THM] CableVisual parented to camera.");
+            }
+
+            // Only update local offset (cheap, no jitter)
             var off = _strangling ? StrangleOffset : IdleOffset;
             var rot = _strangling ? StrangleRotation : IdleRotation;
 
-            _instance.transform.position = camT.position
-                + camT.right   * off.x
-                + camT.up      * off.y
-                + camT.forward * off.z;
-
-            _instance.transform.rotation = camT.rotation * Quaternion.Euler(rot);
+            _instance.transform.localPosition = off;
+            _instance.transform.localRotation = Quaternion.Euler(rot);
         }
         catch { }
     }
