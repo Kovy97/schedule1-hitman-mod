@@ -295,13 +295,13 @@ public class HitmanApp : PhoneApp
         AnchorRect(header, 0, 0.92f, 1, 1);
         PlaceText("Title", "BOUNTY BOARD", header, 22, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
 
-        PlaceText("Sub", "<color=#AAAAAA>Select a contract</color>", root, 13, FontStyle.Italic, TextAnchor.MiddleCenter, 0, 0.88f, 1, 0.92f);
+        PlaceText("Sub", "<color=#AAAAAA>Select a contract</color>", root, 13, FontStyle.Italic, TextAnchor.MiddleCenter, 0, 0.875f, 1, 0.92f);
 
-        // Contract cards — evenly spaced
+        // Contract cards — compact, each card is fully clickable
         var board = mgr.BountyBoard;
-        float cardHeight = 0.27f;
-        float gap = 0.01f;
-        float startY = 0.87f;
+        float cardHeight = 0.22f;
+        float gap = 0.02f;
+        float startY = 0.86f;
 
         for (int i = 0; i < board.Count && i < 3; i++)
         {
@@ -310,24 +310,27 @@ public class HitmanApp : PhoneApp
             ShowBoardCard(board[i], root, yMin, yMax, mgr);
         }
 
-        // Back button (bottom left)
-        var backPanel = MakeButtonPanel("BackBtn", root.transform, new Color(0.25f, 0.25f, 0.35f));
-        AnchorRect(backPanel, 0.04f, 0.01f, 0.35f, 0.08f);
-        PlaceText("BackTxt", "< BACK", backPanel, 13, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
+        // Separator above buttons
+        var sep = MakePanel("Sep", root.transform, Divider);
+        AnchorRect(sep, 0.08f, 0.12f, 0.92f, 0.125f);
+
+        // Bottom buttons
+        var backPanel = MakeButtonPanel("BackBtn", root.transform, new Color(0.20f, 0.20f, 0.28f));
+        AnchorRect(backPanel, 0.04f, 0.02f, 0.48f, 0.10f);
+        PlaceText("BackTxt", "< BACK", backPanel, 14, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
         var backBtn = backPanel.AddComponent<Button>();
-        ConfigureButtonFeedback(backBtn, new Color(0.25f, 0.25f, 0.35f));
+        ConfigureButtonFeedback(backBtn, new Color(0.20f, 0.20f, 0.28f));
         backBtn.onClick.AddListener((UnityAction)(() =>
         {
             mgr.ClearBountyBoard();
             RefreshUI();
         }));
 
-        // Refresh button (bottom right)
-        var refreshPanel = MakeButtonPanel("RefreshBtn", root.transform, new Color(0.25f, 0.25f, 0.35f));
-        AnchorRect(refreshPanel, 0.40f, 0.01f, 0.96f, 0.08f);
-        PlaceText("RefreshTxt", "REFRESH", refreshPanel, 13, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
+        var refreshPanel = MakeButtonPanel("RefreshBtn", root.transform, new Color(0.20f, 0.20f, 0.28f));
+        AnchorRect(refreshPanel, 0.52f, 0.02f, 0.96f, 0.10f);
+        PlaceText("RefreshTxt", "REFRESH", refreshPanel, 14, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
         var refreshBtn = refreshPanel.AddComponent<Button>();
-        ConfigureButtonFeedback(refreshBtn, new Color(0.25f, 0.25f, 0.35f));
+        ConfigureButtonFeedback(refreshBtn, new Color(0.20f, 0.20f, 0.28f));
         refreshBtn.onClick.AddListener((UnityAction)(() =>
         {
             mgr.RefreshBountyBoard();
@@ -337,30 +340,34 @@ public class HitmanApp : PhoneApp
 
     private void ShowBoardCard(Contract contract, GameObject parent, float yMin, float yMax, ContractManager mgr)
     {
-        var card = MakePanel($"Card_{contract.Id}", parent.transform, BgCard);
+        // Entire card is clickable with rounded corners and hover feedback
+        var card = MakeButtonPanel($"Card_{contract.Id}", parent.transform, BgCard);
         AnchorRect(card, 0.04f, yMin, 0.96f, yMax);
 
-        // Row 1: Target name + Type
-        PlaceText("Name", contract.TargetName, card, 15, FontStyle.Bold, TextAnchor.MiddleLeft, 0.06f, 0.62f, 0.58f, 0.95f);
+        // Type accent bar on left edge (red = kill, orange = knockout)
+        Color accentColor = contract.Type == ContractType.Kill
+            ? new Color(0.90f, 0.25f, 0.31f)
+            : new Color(0.90f, 0.63f, 0.25f);
+        var accent = MakePanel("Accent", card.transform, accentColor);
+        AnchorRect(accent, 0.015f, 0.10f, 0.035f, 0.90f);
+
+        // Top row: Target name + Type label
+        PlaceText("Name", contract.TargetName, card, 15, FontStyle.Bold, TextAnchor.MiddleLeft, 0.07f, 0.55f, 0.62f, 0.95f);
         string typeColor = contract.Type == ContractType.Kill ? "E64050" : "E6A040";
-        PlaceText("Type", $"<color=#{typeColor}>{contract.TypeLabel}</color>", card, 13, FontStyle.Bold, TextAnchor.MiddleRight, 0.58f, 0.62f, 0.94f, 0.95f);
+        PlaceText("Type", $"<color=#{typeColor}>{contract.TypeLabel}</color>", card, 12, FontStyle.Bold, TextAnchor.MiddleRight, 0.60f, 0.55f, 0.94f, 0.95f);
 
         // Divider
         var div = MakePanel("Div", card.transform, Divider);
-        AnchorRect(div, 0.06f, 0.60f, 0.94f, 0.61f);
+        AnchorRect(div, 0.07f, 0.50f, 0.94f, 0.515f);
 
-        // Row 2: Difficulty + Reward
+        // Bottom row: Difficulty + Reward
         string difColor = GetDifficultyColor(contract.Difficulty);
-        PlaceText("Diff", $"<color=#{difColor}>{contract.DifficultyLabel}</color>", card, 13, FontStyle.Normal, TextAnchor.MiddleLeft, 0.06f, 0.35f, 0.48f, 0.59f);
-        PlaceText("Reward", $"<color=#00C878>${contract.Reward:N0}</color>", card, 16, FontStyle.Bold, TextAnchor.MiddleRight, 0.48f, 0.35f, 0.94f, 0.59f);
+        PlaceText("Diff", $"<color=#{difColor}>{contract.DifficultyLabel}</color>", card, 13, FontStyle.Normal, TextAnchor.MiddleLeft, 0.07f, 0.06f, 0.45f, 0.48f);
+        PlaceText("Reward", $"<color=#00C878>${contract.Reward:N0}</color>", card, 16, FontStyle.Bold, TextAnchor.MiddleRight, 0.45f, 0.06f, 0.94f, 0.48f);
 
-        // SELECT button
-        var btnPanel = MakeButtonPanel($"Btn_{contract.Id}", card.transform, AcceptGreen);
-        AnchorRect(btnPanel, 0.06f, 0.05f, 0.94f, 0.32f);
-        PlaceText("BtnTxt", "SELECT", btnPanel, 14, FontStyle.Bold, TextAnchor.MiddleCenter, 0, 0, 1, 1);
-
-        var btn = btnPanel.AddComponent<Button>();
-        ConfigureButtonFeedback(btn, AcceptGreen);
+        // Make entire card clickable
+        var btn = card.AddComponent<Button>();
+        ConfigureButtonFeedback(btn, BgCard);
         string id = contract.Id;
         btn.onClick.AddListener((UnityAction)(() =>
         {

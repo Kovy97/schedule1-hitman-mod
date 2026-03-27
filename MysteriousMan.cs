@@ -107,6 +107,7 @@ public sealed class MysteriousMan : NPC
                         choices.Add("accept",       "Yes, I am. (Register as a Hitman)", null);
                         choices.Add("decline",      "No, sorry, I'm the wrong person for this.", null);
                         choices.Add("buy_cable",    $"Buy Fibre Glass Cable (${(int)FibreGlassCable.Price})", null);
+                        choices.Add("buy_syringe",  $"Buy Poison Syringe (${(int)PoisonSyringe.Price})", null);
                     });
             });
 
@@ -169,6 +170,36 @@ public sealed class MysteriousMan : NPC
                 catch (Exception ex)
                 {
                     MelonLogger.Error($"[THM] buy_cable handler failed: {ex.Message}");
+                }
+            });
+
+            Dialogue.OnChoiceSelected("buy_syringe", () =>
+            {
+                try
+                {
+                    float balance = Money.GetCashBalance();
+                    if (balance < PoisonSyringe.Price)
+                    {
+                        MelonLogger.Msg("[THM] Player can't afford Poison Syringe.");
+                        var gameNpc = gameObject.GetComponent<Il2CppScheduleOne.NPCs.NPC>();
+                        gameNpc?.SendTextMessage($"Not enough cash. The syringe costs ${(int)PoisonSyringe.Price}. Come back when you're ready.");
+                        return;
+                    }
+
+                    Money.ChangeCashBalance(-PoisonSyringe.Price, true, false);
+                    PoisonSyringe.GiveToPlayer();
+
+                    MelonLogger.Msg("[THM] Player purchased Poison Syringe.");
+                    try
+                    {
+                        var gameNpc = gameObject.GetComponent<Il2CppScheduleOne.NPCs.NPC>();
+                        gameNpc?.SendTextMessage("Handle with care. One prick and they won't know what hit them — until it's too late.");
+                    }
+                    catch { }
+                }
+                catch (Exception ex)
+                {
+                    MelonLogger.Error($"[THM] buy_syringe handler failed: {ex.Message}");
                 }
             });
 

@@ -12,9 +12,12 @@
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
   </PropertyGroup>
 
-  <!-- Embed the garrote AssetBundle into the DLL -->
+  <!-- Embed asset bundles and icons into the DLL -->
   <ItemGroup>
     <EmbeddedResource Include="Backup\garrote" LogicalName="HitmanMod.Resources.garrote" />
+    <EmbeddedResource Include="Backup\syringe" LogicalName="HitmanMod.Resources.syringe" />
+    <EmbeddedResource Include="Resources\garrote_icon.png" LogicalName="HitmanMod.Resources.garrote_icon.png" />
+    <EmbeddedResource Include="Resources\poison_syringe_icon.png" LogicalName="HitmanMod.Resources.poison_syringe_icon.png" />
   </ItemGroup>
 
   <ItemGroup>
@@ -77,6 +80,12 @@
     <!-- AssetBundle loading (Il2Cpp wrapper from MelonLoader) -->
     <Reference Include="UnityEngine.Il2CppAssetBundleManager">
       <HintPath>$(GameDir)\MelonLoader\net6\UnityEngine.Il2CppAssetBundleManager.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- ImageConversion (for loading PNG to Texture2D) -->
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>$(GameDir)\MelonLoader\Il2CppAssemblies\UnityEngine.ImageConversionModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
 

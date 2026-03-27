@@ -181,6 +181,7 @@ public class HitmanModMain : MelonMod
 
         ContractManager.Update(UnityEngine.Time.deltaTime);
         StrangleHandler.Update(UnityEngine.Time.deltaTime);
+        PoisonHandler.Update(UnityEngine.Time.deltaTime);
 
         // Lightweight timer updates (no UI rebuild)
         if (_appRefreshTimer > 0f)
@@ -202,8 +203,9 @@ public class HitmanModMain : MelonMod
                 return;
 
             FibreGlassCable.Register();
+            PoisonSyringe.Register();
             _cableRegistered = true;
-            LoggerInstance.Msg("[THM] Fibre Glass Cable registered early — inventory can now deserialize it.");
+            LoggerInstance.Msg("[THM] Items registered early — inventory can now deserialize them.");
         }
         catch (Exception ex)
         {
@@ -219,6 +221,7 @@ public class HitmanModMain : MelonMod
     public override void OnSceneWasUnloaded(int buildIndex, string sceneName)
     {
         StrangleHandler.Reset();
+        PoisonHandler.Reset();
         if (_initialized)
         {
             ContractManager?.UnhookGameSaveEvents();

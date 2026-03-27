@@ -136,7 +136,7 @@ public static class StrangleHandler
     public static class PickpocketScreenOpenPatch
     {
         [HarmonyPrefix]
-        public static bool Prefix() => !IsCableEquipped();
+        public static bool Prefix() => !IsCableEquipped() && !PoisonHandler.IsSyringeEquipped();
     }
 
     // ── Target detection via camera raycast ──────────────────────────────────

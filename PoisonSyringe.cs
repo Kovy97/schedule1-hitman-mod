@@ -9,14 +9,14 @@ using S1API.Items;
 namespace HitmanMod;
 
 /// <summary>
-/// Registers the "Fibre Glass Cable" equippable item and provides a helper
+/// Registers the "Poison Syringe" equippable item and provides a helper
 /// to deliver one to the local player's inventory.
 /// </summary>
-public static class FibreGlassCable
+public static class PoisonSyringe
 {
-    public const string ItemId   = "thm_fibre_glass_cable";
-    public const string ItemName = "Fibre Glass Cable";
-    public const float  Price    = 500f;
+    public const string ItemId   = "thm_poison_syringe";
+    public const string ItemName = "Poison Syringe";
+    public const float  Price    = 750f;
 
     public static void Register()
     {
@@ -27,12 +27,12 @@ public static class FibreGlassCable
                 .WithInteraction(canInteract: true, canPickup: true)
                 .Build();
 
-            var icon = IconLoader.Load("HitmanMod.Resources.garrote_icon.png");
+            var icon = IconLoader.Load("HitmanMod.Resources.poison_syringe_icon.png");
 
             ItemCreator.CreateItem(
                 id:                ItemId,
                 name:              ItemName,
-                description:       "A thin steel wire with wooden handles. Silent and lethal.",
+                description:       "A concealed syringe loaded with a slow-acting toxin. One prick is all it takes.",
                 category:          ItemCategory.Equipment,
                 stackLimit:        1,
                 basePurchasePrice: Price,
@@ -42,11 +42,11 @@ public static class FibreGlassCable
                 equippable:        equippable
             );
 
-            Melon<HitmanModMain>.Logger.Msg("[THM] Fibre Glass Cable registered.");
+            Melon<HitmanModMain>.Logger.Msg("[THM] Poison Syringe registered.");
         }
         catch (Exception ex)
         {
-            Melon<HitmanModMain>.Logger.Warning($"[THM] FibreGlassCable.Register failed: {ex.Message}");
+            Melon<HitmanModMain>.Logger.Warning($"[THM] PoisonSyringe.Register failed: {ex.Message}");
         }
     }
 
@@ -54,34 +54,33 @@ public static class FibreGlassCable
     {
         try
         {
-            // Look up the definition via the game's registry (works for S1API custom items)
             var definition = Registry.GetItem(ItemId);
             if (definition == null)
             {
-                Melon<HitmanModMain>.Logger.Warning("[THM] FibreGlassCable: definition not found in registry.");
+                Melon<HitmanModMain>.Logger.Warning("[THM] PoisonSyringe: definition not found in registry.");
                 return;
             }
 
             var instance = definition.GetDefaultInstance(1);
             if (instance == null)
             {
-                Melon<HitmanModMain>.Logger.Warning("[THM] FibreGlassCable: could not create item instance.");
+                Melon<HitmanModMain>.Logger.Warning("[THM] PoisonSyringe: could not create item instance.");
                 return;
             }
 
             var inv = PlayerSingleton<PlayerInventory>.Instance;
             if (inv == null)
             {
-                Melon<HitmanModMain>.Logger.Warning("[THM] FibreGlassCable: PlayerInventory not available.");
+                Melon<HitmanModMain>.Logger.Warning("[THM] PoisonSyringe: PlayerInventory not available.");
                 return;
             }
 
             inv.AddItemToInventory(instance);
-            Melon<HitmanModMain>.Logger.Msg("[THM] Fibre Glass Cable given to player.");
+            Melon<HitmanModMain>.Logger.Msg("[THM] Poison Syringe given to player.");
         }
         catch (Exception ex)
         {
-            Melon<HitmanModMain>.Logger.Warning($"[THM] FibreGlassCable.GiveToPlayer failed: {ex.Message}");
+            Melon<HitmanModMain>.Logger.Warning($"[THM] PoisonSyringe.GiveToPlayer failed: {ex.Message}");
         }
     }
 }

@@ -105,7 +105,10 @@ public class ContractManager
     private bool _killWasRaining;
     private bool _killWasNight;
 
+    private bool _killUsedPoison;
+
     public void SetKillUsedCable() => _killUsedCable = true;
+    public void SetKillUsedPoison() => _killUsedPoison = true;
     public void SetKillHadWitnesses() => _killHadWitnesses = true;
 
     /// <summary>Snapshot weather and time conditions at the moment of the kill.</summary>
@@ -129,7 +132,7 @@ public class ContractManager
         }
         catch { _killWasNight = false; }
 
-        Melon<HitmanModMain>.Logger.Msg($"[THM] Kill conditions: rain={_killWasRaining}, night={_killWasNight}, cable={_killUsedCable}, witnesses={_killHadWitnesses}");
+        Melon<HitmanModMain>.Logger.Msg($"[THM] Kill conditions: rain={_killWasRaining}, night={_killWasNight}, cable={_killUsedCable}, poison={_killUsedPoison}, witnesses={_killHadWitnesses}");
     }
 
     public event Action? OnStateChanged;
@@ -578,6 +581,7 @@ public class ContractManager
             catch { /* NPC destroyed */ }
         }
 
+        PoisonHandler.CancelPoison();
         SendClientMessage("You're backing out? Fine. Don't waste my time again.");
         ResetContractState();
         CooldownRemaining = CooldownAfterAbort;
@@ -1015,7 +1019,23 @@ public class ContractManager
             bonusText += $"\n🔪 <b>+${bonus:N0}</b> Silent Kill Bonus";
             Melon<HitmanModMain>.Logger.Msg($"[THM] Bonus: Silent Kill +${bonus:N0} (10%)");
         }
-        // No witnesses but no cable
+        // Poison Master: Poison kill + no witnesses (+15%)
+        else if (_killUsedPoison && !_killHadWitnesses)
+        {
+            float bonus = baseReward * 0.15f;
+            bonusTotal += bonus;
+            bonusText += $"\n💉 <b>+${bonus:N0}</b> Poison Master Bonus";
+            Melon<HitmanModMain>.Logger.Msg($"[THM] Bonus: Poison Master +${bonus:N0} (15%)");
+        }
+        // Poisoner: Poison used (but had witnesses)
+        else if (_killUsedPoison)
+        {
+            float bonus = baseReward * 0.10f;
+            bonusTotal += bonus;
+            bonusText += $"\n💉 <b>+${bonus:N0}</b> Poisoner Bonus";
+            Melon<HitmanModMain>.Logger.Msg($"[THM] Bonus: Poisoner +${bonus:N0} (10%)");
+        }
+        // No witnesses but no cable/poison
         else if (!_killHadWitnesses)
         {
             float bonus = baseReward * 0.10f;
@@ -1046,6 +1066,7 @@ public class ContractManager
 
         // Reset bonus flags
         _killUsedCable = false;
+        _killUsedPoison = false;
         _killHadWitnesses = false;
         _killWasRaining = false;
         _killWasNight = false;
@@ -1220,6 +1241,7 @@ public class ContractManager
         TargetDistance = -1f;
         _savedTargetRelationship = null;
         _killUsedCable = false;
+        _killUsedPoison = false;
         _killHadWitnesses = false;
     }
 
